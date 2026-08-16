@@ -168,3 +168,7 @@ LEVELS.forEach(function (lv, i) {
 
 console.log(problems === 0 ? 'NO PROBLEMS' : problems + ' PROBLEM(S)');
 logs.forEach(function (l) { print(l); });
+
+// See the note in crusher.js: jsc's quit() always exits 0, so throwing is the
+// only way to report failure to check.sh.
+if (problems > 0) throw new Error(problems + ' problem(s) found');

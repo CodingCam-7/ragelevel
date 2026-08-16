@@ -56,9 +56,12 @@ console.log('slam sounds : ' + slams + '   (expected about ' + expected + ')');
 console.log('heavy shakes: ' + shakes);
 
 var lo = expected - w.movers.length, hi = expected + w.movers.length;
-if (slams >= lo && slams <= hi && shakes === slams) {
-  console.log('\nPASS - one clean slam per cycle');
-} else {
-  console.log('\nFAIL - expected ' + lo + '-' + hi + ' slams with matching shakes');
-}
+var ok = slams >= lo && slams <= hi && shakes === slams;
+console.log(ok ? '\nPASS - one clean slam per cycle'
+               : '\nFAIL - expected ' + lo + '-' + hi + ' slams with matching shakes');
 logs.forEach(function (l) { print(l); });
+
+// Signal failure by throwing, not quit(1): jsc's quit() ignores its argument
+// and always exits 0, so a throw is the only way to hand a non-zero status to
+// check.sh. The stack trace jsc prints is noise here, but a red build is worth it.
+if (!ok) throw new Error('crusher check failed');

@@ -91,7 +91,14 @@ function attempt(levelIndex, eps, maxFrames) {
 }
 
 var ATTEMPTS = 4000;
-var allOk = true;
+
+// Level 14 is unsolvable *by this bot* on purpose: the greedy walker only ever
+// heads toward the door, and the finale needs backtracking to the staircase.
+// It is finale.js's job to prove that one. Listing it here (0-based) keeps the
+// exit status meaningful — an unsolved level 14 is the status quo, an unsolved
+// anything-else is a regression that must fail the run.
+var EXPECTED_UNSOLVED = [13];
+var unsolved = [];
 
 LEVELS.forEach(function (lv, i) {
   var wins = 0, bestFrames = 1e9, furthest = 0;
@@ -102,11 +109,20 @@ LEVELS.forEach(function (lv, i) {
     else if (r.at > furthest) furthest = r.at;
     if (wins >= 25) break;
   }
-  var status = wins > 0 ? 'SOLVABLE' : '*** NEVER SOLVED ***';
-  if (wins === 0) allOk = false;
+  var expected = EXPECTED_UNSOLVED.indexOf(i) !== -1;
+  var status = wins > 0 ? 'SOLVABLE'
+             : expected ? 'never solved (expected - see finale.js)'
+             : '*** NEVER SOLVED ***';
+  if (wins === 0 && !expected) unsolved.push('L' + (i + 1) + ' ' + lv.name);
   console.log('L' + (i + 1) + ' ' + lv.name + ': ' + status +
     ' (wins=' + wins + (wins ? ', fastest=' + bestFrames + 'f' : ', furthest col=' + furthest) + ')');
 });
 
-console.log(allOk ? '\nALL LEVELS SOLVABLE' : '\nSOME LEVELS UNSOLVED - investigate');
+console.log(unsolved.length === 0
+  ? '\nALL LEVELS SOLVABLE (except the expected one)'
+  : '\nUNSOLVED: ' + unsolved.join(', ') + ' - investigate');
 logs.forEach(function (l) { print(l); });
+
+// See the note in crusher.js: jsc's quit() always exits 0, so throwing is the
+// only way to report failure to check.sh.
+if (unsolved.length) throw new Error(unsolved.length + ' level(s) newly unsolvable');

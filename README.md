@@ -68,6 +68,12 @@ js/
   levels.js   all fourteen level definitions
   render.js   all drawing
   game.js     state machine, main loop, boot
+tools/
+  check.sh    runs every check below; non-zero exit if any fail
+  harness.js  smoke test + invisibility audit
+  solver.js   greedy bot, proves levels 1-13 completable
+  finale.js   route-following bot for level 14
+  crusher.js  crusher timing
 ```
 
 Scripts are plain `<script>` tags rather than ES modules specifically so the
@@ -97,6 +103,9 @@ most `COLS` (32) characters, plus optional hooks.
 Build rows with `place({ col: 'chars' })` rather than counting spaces by hand —
 positions are explicit, and short rows are padded automatically.
 
+After adding one, run `./tools/check.sh` — `solver.js` will tell you whether
+your level is actually beatable, which is easy to get wrong by a single tile.
+
 **Tile characters**
 
 | Char | Meaning |
@@ -125,18 +134,35 @@ timed ceiling slam.
 glyph sizes. Both report to the browser console.
 
 `tools/` holds headless checks that stub the DOM, load the game under
-JavaScriptCore (built into macOS) and drive bots through it. Re-run these after
-changing physics constants or level layouts:
+JavaScriptCore (built into macOS) and drive bots through it. Nothing to install.
 
 ```
-cd tools
-JSC=/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc
-$JSC harness.js   # geometry is sane, and I/F tiles give nothing away visually
-$JSC solver.js    # a greedy bot proves each level is completable
-$JSC finale.js    # level 14 needs backtracking, so it gets a route-following bot
-$JSC crusher.js   # crushers slam exactly once per cycle and travel end to end
+./tools/check.sh          # all four
+./tools/check.sh solver   # just one
 ```
 
-`solver.js` reports level 14 as unsolved by design — a bot that only ever walks
-toward the door cannot backtrack to the staircase. `finale.js` is the check
-that matters for that one.
+| Check | Proves |
+| --- | --- |
+| `harness.js` | Nothing throws, geometry is sane, and `I`/`F` tiles give nothing away visually |
+| `solver.js` | A greedy bot can complete levels 1–13 |
+| `finale.js` | Level 14, which needs backtracking, is beatable by a route-following bot |
+| `crusher.js` | Crushers slam exactly once per cycle and travel end to end |
+
+`check.sh` exits non-zero if any check fails, and runs all four even after one
+fails so a second breakage can't hide behind the first.
+
+**Run it after touching physics constants or level layouts.** That is the
+failure this suite exists for: nudging `gravity` or a jump constant can make a
+level quietly unbeatable, which reads as a perfectly innocent one-line diff.
+Raising `gravity` from `0.28` to `1.40` fails ten of the fourteen levels — and
+nothing in the diff would have told you.
+
+`solver.js` reports level 14 as never solved and treats that as a pass: a bot
+that only ever walks toward the door cannot backtrack to the staircase. That
+exemption is `EXPECTED_UNSOLVED` at the top of the file, and it is deliberately
+narrow — any *other* level going unsolved fails the run. `finale.js` is the
+check that covers 14.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

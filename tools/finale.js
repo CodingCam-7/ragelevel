@@ -107,3 +107,8 @@ if (wins > 0) {
     deepest + '/' + ROUTE.length + ' (' + (ROUTE[deepest] ? ROUTE[deepest].name : 'done') + ' is the blocker)');
 }
 logs.forEach(function (l) { print(l); });
+
+// See the note in crusher.js: jsc's quit() always exits 0, so throwing is the
+// only way to report failure to check.sh. solver.js deliberately skips level 14,
+// so this is the only check that can catch the finale becoming impossible.
+if (wins === 0) throw new Error('level 14 is unbeatable');
