@@ -68,22 +68,31 @@ function crusher(w, col, widthTiles, bottomY, period, offset) {
 }
 
 /* A floor-level charger: enters at the right edge and sweeps left along the
- * ground. Exactly one tile tall, so an ordinary jump clears it with room to
- * spare -- the difficulty is noticing in time, not the precision of the hop.
- * Measured, the window to jump is a comfortable ~18 frames; the window to
- * *decide* is about 19.
+ * ground. Exactly one tile tall, so a normal jump clears it easily.
  *
- * It announces itself the moment it spawns. Most of its approach happens in
- * peripheral vision, so without the shake and the siren the first warning a
- * player gets is the death.
+ * This one is deliberately unfair, and the speed is what makes it so. At
+ * RAM_SPEED 10 it covers the ground between the trigger and the player in
+ * about 0.12s -- well inside the ~0.20-0.25s a human needs just to register
+ * a visual change, let alone act on it. You cannot react to this. The first
+ * run is a death, every time, by design.
  *
- * RAM_SPEED is load-bearing and has a floor. The player runs at PHYS.maxRun
- * (2.4), so a charger slower than that loses the race to the door outright:
- * at 2.0 a sprinting player walks into the door untouched and the trap never
- * fires at all. Anything at or below ~2.2 silently disarms it -- and nothing
- * about a disarmed trap looks broken, which is why harness.js checks that a
- * sprinting player actually dies to it. */
-const RAM_SPEED = 2.4;
+ * What saves it from being merely cruel is that speed barely touches the
+ * window for a player who already knows. Measured across 2.4 -> 12, the span
+ * of jump-from-this-spot positions that survive stays at roughly 20 frames;
+ * raising the speed only slides that spot earlier. So the trap is unreactable
+ * and memorisable at the same time, which is the whole intent: rage the first
+ * time, muscle memory the tenth.
+ *
+ * The surviving jump spots sit at x 364-416, i.e. as you clear crusher 3.
+ * That gives the memory something to hang on -- "jump as you come off the
+ * last crusher" -- rather than asking players to count frames.
+ *
+ * RAM_SPEED also has a floor, for a different reason. The player runs at
+ * PHYS.maxRun (2.4), so a charger slower than that loses the race to the door
+ * outright: at 2.0 a sprinting player reaches the door untouched and the trap
+ * never fires. A disarmed trap still spawns and still animates, so nothing
+ * looks broken -- hence the harness.js check. */
+const RAM_SPEED = 10;
 const RAM_WIDE = 2;
 
 function rammer(w, row) {

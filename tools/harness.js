@@ -192,22 +192,22 @@ LEVELS.forEach(function (lv, i) {
 (function () {
   var LV = 7;   // SQUISH
 
-  function run(mode, jumpAt) {
+  // spot = the player x at which they slam jump; null = never jumps.
+  function run(spot) {
     var w = new World(LEVELS[LV], Game);
     Game.world = w; Game.state = 'play'; Game.levelDeaths = 0;
     w.movers.length = 0;                       // drop the ceiling crushers
-    w.player.x = 25 * TILE; w.player.y = 15 * TILE + 3;
+    w.player.x = 20 * TILE; w.player.y = 15 * TILE + 3;
     w.player.vx = 0; w.player.vy = 0;
-    var trig = -1;
+    var trig = -1, jumped = false, held = 0;
     for (var f = 0; f < 300; f++) {
       Input.down = Object.create(null);
       Input.hit = Object.create(null);
       Input.down.right = true;
-      if (trig >= 0 && jumpAt >= 0) {
-        var d = f - trig;
-        if (d === jumpAt) { Input.hit.jump = true; Input.down.jump = true; }
-        else if (d > jumpAt && d < jumpAt + 14) { Input.down.jump = true; }
+      if (spot !== null && !jumped && w.player.x >= spot) {
+        jumped = true; held = 14; Input.hit.jump = true;
       }
+      if (held > 0) { Input.down.jump = true; held--; }
       w.update();
       if (trig < 0) {
         for (var i = 0; i < w.movers.length; i++) {
@@ -219,7 +219,7 @@ LEVELS.forEach(function (lv, i) {
     return { end: 'timeout', at: -1 };
   }
 
-  var blind = run('sprint', -1);
+  var blind = run(null);
   if (blind.end !== 'dead') {
     console.error('L8 charger: a player who sprints at the door survives it (' +
       blind.end + ') - RAM_SPEED (' + RAM_SPEED + ') is too slow to intercept, ' +
@@ -227,16 +227,31 @@ LEVELS.forEach(function (lv, i) {
     problems++;
   }
 
-  var survivable = 0;
-  for (var j = 0; j < 40; j++) if (run('sprint', j).end !== 'dead') survivable++;
-  if (survivable < 6) {
-    console.error('L8 charger: only ' + survivable + ' jump timings survive - too tight to be fair');
+  // The trap is meant to be unreactable. If it ever drifts back above human
+  // reaction time it has quietly become an ordinary obstacle.
+  var reactS = blind.at / 60;
+  if (blind.end === 'dead' && reactS > 0.20) {
+    console.error('L8 charger: ' + reactS.toFixed(2) + 's is inside human reaction time - ' +
+      'it is supposed to be dodgeable only from memory');
     problems++;
   }
 
-  console.log('L8 charger is lethal (' + (blind.at / 60).toFixed(2) + 's to react) and ' +
-    'jumpable (' + survivable + ' timings work) -> ' +
-    (blind.end === 'dead' && survivable >= 6 ? 'ok' : 'FAILED'));
+  // ...but a player who knows the spot must still be able to clear it. Model
+  // that the way a real player does: jump on reaching a position, not on a
+  // frame count, since the viable spots are mostly *before* the trigger fires.
+  var spots = [];
+  for (var x = 330; x <= 470; x += 2) if (run(x).end !== 'dead') spots.push(x);
+  var widthFrames = spots.length ? (spots[spots.length - 1] - spots[0]) / PHYS.maxRun : 0;
+  if (widthFrames < 8) {
+    console.error('L8 charger: only ~' + widthFrames.toFixed(0) + ' frames of viable jump ' +
+      'positions - unfair even with full knowledge');
+    problems++;
+  }
+
+  console.log('L8 charger unreactable (' + reactS.toFixed(2) + 's) but learnable (~' +
+    widthFrames.toFixed(0) + 'f of jump spots, x ' + (spots[0] || '-') + '-' +
+    (spots[spots.length - 1] || '-') + ') -> ' +
+    (blind.end === 'dead' && reactS <= 0.20 && widthFrames >= 8 ? 'ok' : 'FAILED'));
 })();
 
 // --- dynamic bot run ------------------------------------------------------
