@@ -55,6 +55,12 @@ phantom blocks are drawn as ordinary solid ones, on your fiftieth attempt as
 much as your first — nothing marks the safe tile or the right jump. Working it
 out by dying is the game.
 
+A phantom does give itself up at the moment you touch it: the block detaches
+and falls away, so you see *which* tile betrayed you rather than just sinking
+through the floor. But it is restored the instant you die. The cue is there to
+train your memory, not to accumulate into a map — play badly and the level
+never gets easier.
+
 ## Layout
 
 ```
@@ -113,7 +119,7 @@ your level is actually beatable, which is easy to get wrong by a single tile.
 | `#` | Solid block |
 | `B` | Brittle — crumbles shortly after you stand on it |
 | `I` | Invisible but solid |
-| `F` | Phantom — looks solid, isn't |
+| `F` | Phantom — looks solid, isn't; drops away when touched, and is back next life |
 | `^ v < >` | Spikes, by direction |
 | `P` / `D` | Player spawn / door (stripped from the grid at load) |
 
