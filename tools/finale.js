@@ -109,20 +109,39 @@ function run(trial, maxFrames) {
   return { won: false, reached: wp, timeout: true };
 }
 
-var wins = 0, deepest = 0, best = 1e9;
-for (var t = 0; t < 30000; t++) {
-  var r = run(t, 2200);
-  if (r.won) { wins++; if (r.frames < best) best = r.frames; }
-  if (r.reached > deepest) deepest = r.reached;
-  if (wins >= 10) break;
-}
+// Every variant has to be climbable on its own. The crusher phase differs
+// between them, and a phase that never opens a window would be invisible if
+// the variants were rolled at random and any clear counted as a pass.
+var nVariants = LEVELS[13].variants || 1;
+var failed = [];
+var summary = [];
 
-if (wins > 0) {
-  console.log('L14 GRAND FINALE: SOLVABLE (' + wins + ' full clears, fastest ' + best + ' frames)');
-} else {
-  console.log('L14 GRAND FINALE: *** UNSOLVED *** - deepest waypoint reached: ' +
-    deepest + '/' + ROUTE.length + ' (' + (ROUTE[deepest] ? ROUTE[deepest].name : 'done') + ' is the blocker)');
+for (var v = 0; v < nVariants; v++) {
+  World.forceVariant = v;
+  var wins = 0, deepest = 0, best = 1e9;
+  for (var t = 0; t < 30000; t++) {
+    var r = run(t, 2200);
+    if (r.won) { wins++; if (r.frames < best) best = r.frames; }
+    if (r.reached > deepest) deepest = r.reached;
+    if (wins >= 6) break;
+  }
+  if (wins > 0) {
+    summary.push('v' + v + ' ' + best + 'f');
+  } else {
+    summary.push('v' + v + ' STUCK@' + deepest);
+    failed.push('variant ' + v + ' stalls at "' +
+      (ROUTE[deepest] ? ROUTE[deepest].name : 'done') + '"');
+  }
 }
+World.forceVariant = null;
+
+if (failed.length === 0) {
+  console.log('L14 GRAND FINALE: SOLVABLE  ' + nVariants + ' variants [' + summary.join(' ') + ']');
+} else {
+  console.log('L14 GRAND FINALE: *** UNSOLVED ***  [' + summary.join(' ') + ']');
+  failed.forEach(function (m) { console.error('  ' + m); });
+}
+var wins = failed.length === 0 ? 1 : 0;
 logs.forEach(function (l) { print(l); });
 
 // See the note in crusher.js: jsc's quit() always exits 0, so throwing is the

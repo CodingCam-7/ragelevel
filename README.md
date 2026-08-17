@@ -85,6 +85,38 @@ through the floor. But it is restored the instant you die. The cue is there to
 train your memory, not to accumulate into a map — play badly and the level
 never gets easier.
 
+## Variants
+
+Every level exists in three hand-authored versions, and **the game re-rolls
+which one you get every time you die.** Positions move, widths change, timings
+shift. Clearing a level once tells you how it works; it does not tell you where
+anything will be next time.
+
+This is deliberately *not* random generation. The dice choose between prepared
+levels, they never build one — so every arrangement you can encounter has been
+authored and proven beatable. Genuine per-frame randomness would make deaths
+stop teaching anything and would let some rolls be unwinnable, which is the one
+thing the genre cannot survive.
+
+A level declares `variants: 3` and reads `w.variant` (0-based) in `init`,
+usually to pick a row out of a small table:
+
+```js
+variants: 3,
+init(w) {
+  w.v = [
+    { pit: 12, spikes: 17 },
+    { pit: 11, spikes: 16 },
+    { pit: 13, spikes: 18 }
+  ][w.variant];
+}
+```
+
+`World.forceVariant` pins one variant so the checks can prove each on its own.
+The game never sets it; only `tools/` does. That matters — a broken variant
+hides easily behind two working siblings, and the player who rolls it just
+dies without ever learning why.
+
 ## Layout
 
 ```
@@ -175,9 +207,9 @@ JavaScriptCore (built into macOS) and drive bots through it. Nothing to install.
 | Check | Proves |
 | --- | --- |
 | `harness.js` | Nothing throws, geometry is sane, `I`/`F` tiles give nothing away, level 8's charger stays unreactable, and the death-count wipe stays expensive |
-| `solver.js` | A greedy bot can complete levels 1–13 |
-| `finale.js` | Level 14, which needs backtracking, is beatable by a route-following bot |
-| `dark.js` | Level 9 is beatable using only what the light bubble shows, and punishing when you react late |
+| `solver.js` | A greedy bot can complete every variant of levels 1–13 |
+| `finale.js` | Every variant of level 14, which needs backtracking, is beatable by a route-following bot |
+| `dark.js` | Every variant of level 9 is beatable using only what the light bubble shows, and punishing when you react late |
 | `crusher.js` | Crushers slam exactly once per cycle and travel end to end |
 
 `dark.js` exists because `solver.js` reads the grid directly, so darkness is

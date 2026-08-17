@@ -129,6 +129,9 @@ LEVELS.forEach(function (lv, i) {
 // every death would hand the player a free map of which tiles were fake, and
 // the level would get easier the worse you played at it.
 (function () {
+  // Pin a variant: reset() re-rolls it, and a level whose phantom moves per
+  // variant would look "not restored" purely because the dice moved it.
+  World.forceVariant = 0;
   var levelIndex = -1, pc = -1, pr = -1;
   for (var i = 0; i < LEVELS.length && levelIndex < 0; i++) {
     var probe = new World(LEVELS[i], Game);
@@ -182,6 +185,7 @@ LEVELS.forEach(function (lv, i) {
 
   console.log('phantom drops, falls, expires, and is restored by reset -> ' +
     (restored && cleared ? 'ok' : 'FAILED'));
+  World.forceVariant = null;
 })();
 
 // --- level 8's charger must actually be a threat ---------------------------
@@ -324,6 +328,36 @@ LEVELS.forEach(function (lv, i) {
   console.log('wipe needs ' + FULL_RUNS_TO_RESET + ' clean full runs, settings clamp and apply -> ' +
     (problems === before ? 'ok' : 'FAILED'));
   fresh();
+})();
+
+// --- every level must actually vary --------------------------------------
+// A level that quietly drops back to one variant still plays fine, still
+// passes the solver, and still looks correct in a diff -- it just becomes
+// rote-learnable again, which is the one property all of this exists to
+// prevent. Nothing else would notice.
+(function () {
+  var flat = [];
+  LEVELS.forEach(function (lv, i) {
+    if (!lv.variants || lv.variants < 2) flat.push('L' + (i + 1) + ' ' + lv.name);
+  });
+  if (flat.length) {
+    console.error('single-variant level(s): ' + flat.join(', ') +
+      ' - these can be beaten from memory once and never re-read');
+    problems++;
+  }
+
+  // and the roll must actually land on all of them
+  var seen = Object.create(null);
+  for (var n = 0; n < 400; n++) seen[new World(LEVELS[0], Game).variant] = true;
+  var hit = Object.keys(seen).length;
+  if (hit < (LEVELS[0].variants || 1)) {
+    console.error('variant roll only ever produced ' + hit + ' of ' +
+      LEVELS[0].variants + ' variants');
+    problems++;
+  }
+
+  console.log('all ' + LEVELS.length + ' levels carry variants, roll covers all of them -> ' +
+    (flat.length === 0 && hit >= (LEVELS[0].variants || 1) ? 'ok' : 'FAILED'));
 })();
 
 // --- dynamic bot run ------------------------------------------------------

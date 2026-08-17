@@ -130,42 +130,51 @@ const LEVELS = [
       place({ 3: 'P', 20: 'D' }),
       FULL, FULL
     ],
+    variants: 3,
     init(w) {
       w.phase = 0;
+      // Where it runs to, and what it leaves in the road, is re-rolled every
+      // life. The shape of the joke is fixed; the route is not.
+      w.v = [
+        { flee: 28, back: 4, spike: 12, mid: 17, pillar: 17 },
+        { flee: 26, back: 6, spike: 18, mid: 11, pillar: 11 },
+        { flee: 29, back: 3, spike: 9,  mid: 21, pillar: 21 }
+      ][w.variant];
       w.msg('walk right. touch door. easy.', 150);
     },
     update(w) {
       const c = (w.player.x + w.player.w / 2) / TILE;
+      const v = w.v;
 
-      if (w.phase === 0 && c > 14) {
+      if (w.phase === 0 && c > 13) {
         w.phase = 1;
-        w.doorTo(28, 15);
+        w.doorTo(v.flee, 15);
         w.shakeIt(5);
         w.msg('...the door is shy.');
         Sfx.teleport();
 
-      } else if (w.phase === 1 && c > 25) {
+      } else if (w.phase === 1 && c > v.flee - 3) {
         // all the way back past your own spawn
         w.phase = 2;
-        w.doorTo(4, 15);
+        w.doorTo(v.back, 15);
         w.shakeIt(6);
-        w.spikes(12, 15, 2, '^');       // and something to clear on the way
+        w.spikes(v.spike, 15, 2, '^');   // and something to clear on the way
         w.msg('oh. were you close?');
         Sfx.teleport();
 
-      } else if (w.phase === 2 && c < 8) {
+      } else if (w.phase === 2 && c < v.back + 4) {
         // and it leaves before you arrive, naturally
         w.phase = 3;
-        w.doorTo(16, 15);
+        w.doorTo(v.mid, 15);
         w.shakeIt(5);
         w.msg('warmer.');
         Sfx.teleport();
 
-      } else if (w.phase === 3 && c > 13) {
+      } else if (w.phase === 3 && Math.abs(c - v.mid) < 3) {
         // one honest jump, once the walking has stopped being funny
         w.phase = 4;
-        w.wall(16, 14, 1, 2);
-        w.doorTo(16, 13);
+        w.wall(v.pillar, 14, 1, 2);
+        w.doorTo(v.pillar, 13);
         w.msg('fine. take it.');
       }
     }
@@ -180,28 +189,39 @@ const LEVELS = [
       place({ 0: rep('#', 7), 7: rep('B', 18), 25: rep('#', 7) }),
       EMPTY
     ],
-    init(w) { w.msg('the floor is only mostly real', 150); },
+    variants: 3,
+    init(w) {
+      // Which stretches of floor are lying, re-rolled every life. Holes never
+      // land closer than four tiles apart in any variant, so there is always
+      // ground to take off from.
+      w.v = [
+        { a: 14, aw: 2, b: 21, bw: 3, c: 26 },
+        { a: 12, aw: 3, b: 19, bw: 2, c: 25 },
+        { a: 15, aw: 2, b: 20, bw: 3, c: 27 }
+      ][w.variant];
+      w.msg('the floor is only mostly real', 150);
+    },
     triggers: [
       // three separate holes now, and the brittle stretch between them is
       // still counting down under your feet -- standing still to think about
       // the next one is its own mistake
       {
-        x: 10, y: 12, w: 2, h: 6,
-        run(w) { w.crumbleNow(14, 16, 2, 1); w.shakeIt(5); }
+        x: 9, y: 12, w: 1, h: 6,
+        run(w) { w.crumbleNow(w.v.a, 16, w.v.aw, 1); w.shakeIt(5); }
       },
       {
-        x: 17, y: 12, w: 3, h: 6,
+        x: 16, y: 12, w: 1, h: 6,
         run(w) {
-          w.crumbleNow(21, 16, 3, 1);
+          w.crumbleNow(w.v.b, 16, w.v.bw, 1);
           w.shakeIt(6);
           w.msg('JUMP');
         }
       },
       // and the solid-looking run-up to the door is not that either
       {
-        x: 23, y: 12, w: 2, h: 6,
+        x: 23, y: 12, w: 1, h: 6,
         run(w) {
-          w.after(16, (wl) => { wl.crumbleNow(26, 16, 2, 1); wl.shakeIt(5); wl.msg('one more'); });
+          w.after(16, (wl) => { wl.crumbleNow(wl.v.c, 16, 2, 1); wl.shakeIt(5); wl.msg('one more'); });
         }
       }
     ]
@@ -215,22 +235,32 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
+    variants: 3,
+    init(w) {
+      // Wave positions and widths both move. The rhythm you learned last life
+      // is the wrong rhythm this one.
+      w.v = [
+        { a: 9,  aw: 3, b: 16, bw: 3, c: 22, cw: 3, back: 17 },
+        { a: 8,  aw: 2, b: 15, bw: 3, c: 21, cw: 2, back: 16 },
+        { a: 10, aw: 3, b: 17, bw: 2, c: 23, cw: 3, back: 18 }
+      ][w.variant];
+    },
     triggers: [
-      { x: 5, y: 10, w: 2, h: 8, run(w) { w.spikes(9, 15, 3, '^'); } },
+      { x: 5, y: 10, w: 1, h: 8, run(w) { w.spikes(w.v.a, 15, w.v.aw, '^'); } },
       {
-        x: 12, y: 10, w: 2, h: 8,
+        x: 12, y: 10, w: 1, h: 8,
         run(w) {
-          w.spikes(16, 15, 3, '^');
+          w.spikes(w.v.b, 15, w.v.bw, '^');
           w.msg('again');
         }
       },
       {
         x: 19, y: 10, w: 1, h: 8,
         run(w) {
-          w.spikes(22, 15, 3, '^');
+          w.spikes(w.v.c, 15, w.v.cw, '^');
           // far enough behind that it cuts off the retreat without spearing
           // the player who just walked over the trigger
-          w.after(10, (wl) => { wl.spikes(17, 15, 2, '^'); wl.msg('no going back'); });
+          w.after(10, (wl) => { wl.spikes(wl.v.back, 15, 2, '^'); wl.msg('no going back'); });
         }
       },
       // A fourth wave by the door was tried and removed: with the third wave
@@ -250,18 +280,30 @@ const LEVELS = [
     map: [
       ...Array(11).fill(EMPTY),
       place({ 2: 'P', 30: 'D' }),
-      place({ 0: rep('#', 8), 8: 'F', 9: rep('#', 9), 21: rep('#', 11) }),
+      place({ 0: rep('#', 18), 21: rep('#', 11) }),
       place({ 0: rep('#', 6), 21: rep('#', 11) }),
       place({ 0: rep('#', 6), 19: '#', 21: rep('#', 11) }),
       FULL, FULL, FULL
     ],
-    init(w) { w.msg('solid ground, all the way across', 150); },
+    variants: 3,
+    init(w) {
+      // The phantom is placed here rather than baked into the map, so which
+      // tile of the upper walkway is the lie moves every life. Counting your
+      // steps to it is no longer a strategy.
+      w.v = [
+        { phantom: 8,  wall: 25, spike: 27 },
+        { phantom: 12, wall: 24, spike: 27 },
+        { phantom: 15, wall: 26, spike: 28 }
+      ][w.variant];
+      w.set(w.v.phantom, 12, 'F');
+      w.msg('solid ground, all the way across', 150);
+    },
     triggers: [
       {
         x: 21, y: 8, w: 3, h: 4,
         run(w) {
-          w.wall(25, 10, 1, 2);
-          w.after(8, (wl) => { wl.spikes(27, 11, 2, '^'); wl.msg('land carefully'); });
+          w.wall(w.v.wall, 10, 1, 2);
+          w.after(8, (wl) => { wl.spikes(wl.v.spike, 11, 2, '^'); wl.msg('land carefully'); });
         }
       }
     ]
@@ -276,15 +318,23 @@ const LEVELS = [
       place({ 0: rep('#', 13), 13: rep('I', 6), 19: rep('#', 13) }),
       place({ 0: rep('#', 13), 19: rep('#', 13) })
     ],
+    variants: 3,
     init(w) {
       w.dropped = false;
+      // Both which stretch is safe-looking and where the honest gap waits
+      // are re-rolled, so "the pit is fine" and "this one is not" swap places.
+      w.v = [
+        { real: 24, zone: [11, 20] },
+        { real: 22, zone: [11, 20] },
+        { real: 26, zone: [12, 21] }
+      ][w.variant];
       w.msg('mind the gap', 130);
     },
     update(w) {
       // Jumping over the "gap" is the mistake. Walking across it is the answer.
       const p = w.player;
       const c = Math.floor((p.x + p.w / 2) / TILE);
-      if (!w.dropped && !p.onGround && p.vy < 0 && c >= 11 && c <= 20) {
+      if (!w.dropped && !p.onGround && p.vy < 0 && c >= w.v.zone[0] && c <= w.v.zone[1]) {
         w.dropped = true;
         w.mover({
           x: 10 * TILE, y: -TILE * 3, w: 11 * TILE, h: TILE * 3,
@@ -303,7 +353,7 @@ const LEVELS = [
       {
         x: 21, y: 10, w: 1, h: 8,
         run(w) {
-          w.crumbleNow(24, 16, 2, 2);
+          w.crumbleNow(w.v.real, 16, 2, 2);
           w.shakeIt(6);
           w.msg('this one is real');
         }
@@ -316,16 +366,25 @@ const LEVELS = [
     name: 'FAKE NEWS',
     map: [
       ...Array(14).fill(EMPTY),
-      // The old bridge alternated ## FF ## FF, which you only had to read
-      // once: every gap was two wide and every landing was two wide. This
-      // one is irregular on both counts -- gaps of 2, 3, 2, and single-tile
-      // landings at 13 and 21 that have to be hit rather than fallen onto.
-      place({ 9: '##FF#FFF##FF#F' }),
+      // Laid down in init() per variant, not baked in here.
+      EMPTY,
       place({ 2: 'P', 28: 'D' }),
       place({ 0: rep('#', 8), 24: rep('#', 8) }),
       place({ 0: rep('#', 8), 24: rep('#', 8) })
     ],
-    init(w) { w.msg('a perfectly normal bridge', 150); }
+    variants: 3,
+    init(w) {
+      /* The old bridge alternated ## FF ## FF: every gap two wide, every
+       * landing two wide, so one crossing taught you all of it. Each of these
+       * is irregular in both, and which one you get is re-rolled every life,
+       * so the bridge has to be read rather than remembered. No gap exceeds
+       * three tiles in any of them. */
+      const plank = ['##FF#FFF##FF#F',
+                     '#FF##FFF#F##FF',
+                     '##F#FF#FF##F#F'][w.variant];
+      for (let i = 0; i < plank.length; i++) w.set(9 + i, 14, plank[i]);
+      w.msg('a perfectly normal bridge', 150);
+    }
   },
 
   /* ---------------------------------------------------------------- 7 */
@@ -337,9 +396,18 @@ const LEVELS = [
       place({ 2: 'P', 27: 'D' }),
       FULL, FULL
     ],
+    variants: 3,
     init(w) {
       w.hops = 0;
-      w.spots = [[15, 13], [8, 13], [22, 13], [30, 15]];
+      // Four hops either way, but a different circuit each life, so the
+      // chase cannot be run from memory. Every listed spot sits on one of
+      // the three platforms or the floor.
+      w.spots = [
+        [[15, 13], [8, 13], [22, 13], [30, 15]],
+        [[22, 13], [15, 13], [8, 13], [30, 15]],
+        [[8, 13], [22, 13], [15, 13], [30, 15]]
+      ][w.variant];
+      w.lastSpike = 27;
     },
     update(w) {
       if (w.hops >= w.spots.length) return;
@@ -370,10 +438,17 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
+    variants: 3,
     init(w) {
-      crusher(w, 9, 3, 224, 160, 0);
-      crusher(w, 17, 3, 224, 160, 80);
-      crusher(w, 24, 3, 224, 140, 40);
+      // Same three crushers, different columns and different phase offsets,
+      // so the gaps in the rhythm move. The charger's trigger column stays
+      // put at 26: its whole design depends on the run-off from crusher 3.
+      const v = [
+        [[9, 160, 0],  [17, 160, 80], [24, 140, 40]],
+        [[8, 150, 60], [16, 170, 10], [23, 130, 90]],
+        [[10, 140, 30], [18, 150, 100], [25, 160, 20]]
+      ][w.variant];
+      v.forEach((c) => crusher(w, c[0], 3, 224, c[1], c[2]));
       w.msg('timing is everything', 140);
     },
     triggers: [
@@ -403,7 +478,20 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    init(w) { w.msg('nice and bright in here', 120); },
+    variants: 3,
+    init(w) {
+      // The trigger columns stay put; what they build does not. Each life
+      // the four changes land on different tiles, so the level you learned
+      // last attempt is not the one being assembled around you now.
+      w.v = [
+        { pit: 12, spk: 17, wall: 21, pit2: 24, lip: 26 },
+        { pit: 11, spk: 16, wall: 20, pit2: 25, lip: 27 },
+        // pit2 must clear the wall's spike (at wall+1) by at least one tile,
+        // or there is nowhere to land between them and the jump is impossible
+        { pit: 13, spk: 18, wall: 22, pit2: 25, lip: 27 }
+      ][w.variant];
+      w.msg('nice and bright in here', 120);
+    },
     triggers: [
       {
         x: 6, y: 10, w: 1, h: 8,
@@ -416,14 +504,14 @@ const LEVELS = [
       // means nobody ever meets changes 3 and 4.
       {
         x: 8, y: 10, w: 1, h: 8,
-        run(w) { w.crumbleNow(12, 16, 2, 2); w.shakeIt(6); }
+        run(w) { w.crumbleNow(w.v.pit, 16, 2, 2); w.shakeIt(6); }
       },
 
       // 2. spikes on the landing side, armed once you are already committed
       // to the jump and can no longer choose otherwise
       {
         x: 13, y: 10, w: 1, h: 8,
-        run(w) { w.after(10, (wl) => wl.spikes(17, 15, 2, '^')); }
+        run(w) { w.after(10, (wl) => wl.spikes(wl.v.spk, 15, 2, '^')); }
       },
 
       // 3. a wall in the dark with a spike tucked in behind it, so clearing
@@ -434,8 +522,8 @@ const LEVELS = [
       {
         x: 17, y: 10, w: 1, h: 8,
         run(w) {
-          w.wall(21, 14, 1, 2);
-          w.spikes(22, 15, 1, '^');
+          w.wall(w.v.wall, 14, 1, 2);
+          w.spikes(w.v.wall + 1, 15, 1, '^');
           w.dark = 0.1;
           Sfx.teleport();
         }
@@ -447,9 +535,9 @@ const LEVELS = [
       {
         x: 21, y: 10, w: 1, h: 8,
         run(w) {
-          w.crumbleNow(24, 16, 2, 2);
+          w.crumbleNow(w.v.pit2, 16, 2, 2);
           w.shakeIt(5);
-          w.after(22, (wl) => { wl.crumbleNow(26, 16, 1, 2); wl.shakeIt(4); });
+          w.after(22, (wl) => { wl.crumbleNow(wl.v.lip, 16, 1, 2); wl.shakeIt(4); });
         }
       },
 
@@ -465,8 +553,7 @@ const LEVELS = [
     name: 'UPSIDE DOWN',
     map: [
       FULL, FULL,
-      // the ceiling becomes the floor, so this is the run you actually walk
-      place({ 12: 'vv', 20: 'vv', 25: 'v' }),
+      EMPTY,                 // the ceiling run is laid down per variant
       place({ 28: 'D' }),
       ...Array(5).fill(EMPTY),
       place({ 8: rep('#', 5) }),
@@ -474,7 +561,21 @@ const LEVELS = [
       place({ 2: 'P' }),
       FULL, FULL
     ],
-    init(w) { w.msg('the door is up there. sorry.', 150); },
+    variants: 3,
+    init(w) {
+      // The ceiling is the floor once you flip, so these are the obstacles
+      // on the walk that matters. Positions and the stutter column both move.
+      w.v = [
+        { spikes: [[12, 2], [20, 2], [25, 1]], stutter: 22 },
+        { spikes: [[11, 2], [17, 1], [23, 2]], stutter: 19 },
+        { spikes: [[13, 1], [18, 2], [24, 2]], stutter: 26 }
+      ][w.variant];
+      w.v.spikes.forEach((s) => {
+        for (let i = 0; i < s[1]; i++) w.set(s[0] + i, 2, 'v');
+      });
+      w.stuttered = false;
+      w.msg('the door is up there. sorry.', 150);
+    },
     triggers: [
       {
         x: 15, y: 10, w: 2, h: 8,
@@ -487,28 +588,30 @@ const LEVELS = [
           Sfx.trap();
         }
       },
-      // A stutter, not a reversal: gravity drops you for a moment and then
-      // takes it back. Long enough to fall five tiles and lose the rhythm,
-      // short enough that the ceiling catches you again on the way back.
-      {
-        x: 22, y: 0, w: 2, h: 8,
-        run(w) {
-          w.setGravity(1);
-          w.player.vy = 0;
-          w.player.onGround = false;
-          w.shakeIt(7);
-          w.msg('oh no you dont');
-          Sfx.trap();
-          w.after(26, (wl) => {
-            wl.setGravity(-1);
-            wl.player.vy = 0;
-            wl.player.onGround = false;
-            wl.shakeIt(6);
-            Sfx.teleport();
-          });
-        }
-      }
-    ]
+    ],
+    /* A stutter, not a reversal: gravity drops you for a moment and then
+     * takes it back. Long enough to fall five tiles and lose the rhythm,
+     * short enough that the ceiling catches you again on the way back.
+     * Done here rather than as a trigger because the column moves per
+     * variant, and a trigger's zone is fixed at load. */
+    update(w) {
+      if (w.stuttered || w.gravDir !== -1) return;
+      if ((w.player.x + w.player.w / 2) / TILE < w.v.stutter) return;
+      w.stuttered = true;
+      w.setGravity(1);
+      w.player.vy = 0;
+      w.player.onGround = false;
+      w.shakeIt(7);
+      w.msg('oh no you dont');
+      Sfx.trap();
+      w.after(26, (wl) => {
+        wl.setGravity(-1);
+        wl.player.vy = 0;
+        wl.player.onGround = false;
+        wl.shakeIt(6);
+        Sfx.teleport();
+      });
+    }
   },
 
   /* --------------------------------------------------------------- 11 */
@@ -519,17 +622,23 @@ const LEVELS = [
       place({ 2: 'P', 30: 'D' }),
       FULL, FULL
     ],
-    init(w) { w.msg('nothing suspicious here', 130); },
+    variants: 3,
+    init(w) {
+      /* Which tiles survive, re-rolled every life. The surviving tiles used
+       * to come in pairs at a fixed spacing, so one crossing taught you the
+       * whole rhythm; now the runs and gaps are uneven AND they move. Each
+       * string covers columns 13-28, '.' meaning the floor goes. */
+      w.plan = ['##.#..#.##..#..#',
+                '#..##.#..#.##..#',
+                '##..#.##..#..##.'][w.variant];
+      w.msg('nothing suspicious here', 130);
+    },
     triggers: [
       {
         x: 9, y: 10, w: 3, h: 8,
         run(w) {
-          // The surviving tiles used to come in pairs at a fixed spacing, so
-          // one crossing taught you the whole rhythm. Now the runs and the
-          // gaps are both uneven, and two of the landings are a single tile.
           for (let c = 13; c <= 28; c++) {
-            const safe = (c <= 14) || (c === 17) ||
-                         (c >= 21 && c <= 22) || (c === 25) || (c >= 28);
+            const safe = w.plan[c - 13] === '#';
             if (safe) { w.set(c, 16, 'I'); w.set(c, 17, ' '); }
             else w.crumbleNow(c, 16, 1, 2);
           }
@@ -546,29 +655,35 @@ const LEVELS = [
     name: 'MIRROR',
     map: [
       ...Array(15).fill(EMPTY),
-      place({ 2: 'P', 14: '^', 18: '^^', 23: '^', 29: 'D' }),
+      place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    triggers: [
-      // Four flips instead of two, and spikes placed so the flips land while
-      // you are committed to a jump rather than standing still thinking.
-      {
-        x: 10, y: 10, w: 1, h: 8,
-        run(w) { w.setMirror(true); w.shakeIt(8); w.msg('left is right now'); Sfx.trap(); }
-      },
-      {
-        x: 16, y: 10, w: 1, h: 8,
-        run(w) { w.setMirror(false); w.shakeIt(6); w.msg('or is it'); Sfx.trap(); }
-      },
-      {
-        x: 21, y: 10, w: 1, h: 8,
-        run(w) { w.setMirror(true); w.shakeIt(8); w.msg('again'); Sfx.trap(); }
-      },
-      {
-        x: 26, y: 10, w: 1, h: 8,
-        run(w) { w.setMirror(false); w.shakeIt(8); w.msg('never mind'); Sfx.trap(); }
-      }
-    ]
+    variants: 3,
+    init(w) {
+      // Four flips either way, but the columns move, and so do the spikes
+      // they are timed against -- so you cannot learn "flip, jump, flip".
+      w.v = [
+        { flips: [10, 16, 21, 26], spikes: [14, 18, 23] },
+        { flips: [8, 14, 19, 25],  spikes: [12, 17, 22] },
+        { flips: [11, 15, 22, 27], spikes: [13, 20, 24] }
+      ][w.variant];
+      w.v.spikes.forEach((c) => w.set(c, 15, '^'));
+      w.msg('watch your step', 120);
+    },
+    update(w) {
+      // Flips are driven from here because their columns move per variant,
+      // and a trigger's zone is fixed when the level loads.
+      if (w.flipped === undefined) w.flipped = 0;
+      if (w.flipped >= w.v.flips.length) return;
+      const c = (w.player.x + w.player.w / 2) / TILE;
+      if (c < w.v.flips[w.flipped]) return;
+      const on = w.flipped % 2 === 0;
+      w.flipped++;
+      w.setMirror(on);
+      w.shakeIt(on ? 8 : 6);
+      w.msg(['left is right now', 'or is it', 'again', 'never mind'][w.flipped - 1]);
+      Sfx.trap();
+    }
   },
 
   /* --------------------------------------------------------------- 13 */
@@ -581,20 +696,26 @@ const LEVELS = [
       place({ 0: rep('#', 18), 20: rep('#', 12) }),
       place({ 0: rep('#', 18), 20: rep('#', 12) })
     ],
+    variants: 3,
     init(w) {
       // The player runs at PHYS.maxRun (2.4), so the train's speed is really
       // a budget for how much time you may spend on the obstacles in its way.
       // At 1.25 there was enough slack to stop and think about each one.
+      w.v = [
+        { speed: 1.7, wall: 27 },
+        { speed: 1.6, wall: 24 },
+        { speed: 1.8, wall: 29 }
+      ][w.variant];
       w.mover({
         x: -5 * TILE, y: 0, w: 5 * TILE, h: VH,
-        vx: 1.7, style: 'wall', solid: false, deadly: true
+        vx: w.v.speed, style: 'wall', solid: false, deadly: true
       });
       w.msg('RUN', 120);
     },
     triggers: [
       {
         x: 21, y: 10, w: 2, h: 8,
-        run(w) { w.wall(27, 14, 1, 2); w.msg('one more thing'); }
+        run(w) { w.wall(w.v.wall, 14, 1, 2); w.msg('one more thing'); }
       }
     ]
   },
@@ -611,7 +732,18 @@ const LEVELS = [
       FULL, FULL,
       EMPTY
     ],
+    variants: 3,
     init(w) {
+      // The staircase geometry is fixed -- finale.js follows it by waypoint --
+      // but the crusher's phase and where the traps land are re-rolled, so the
+      // timing you learned climbing it last life is not this life's timing.
+      w.v = [
+        { phase: 60,  gnd: 19, top: 21, late: 26 },
+        { phase: 15,  gnd: 20, top: 22, late: 25 },
+        // gnd stays >= 19: column 18 sits under the top platform, which
+        // leaves ~25px between the spikes and the overhang instead of sky
+        { phase: 100, gnd: 19, top: 21, late: 25 }
+      ][w.variant];
       w.door.fake = true;
       w.msg('last one. promise.', 140);
     },
@@ -621,12 +753,12 @@ const LEVELS = [
       w.after(40, (wl) => {
         wl.doorTo(17, 10);
         wl.door.hidden = false;
-        wl.spikes(26, 14, 3, '^');
+        wl.spikes(wl.v.late, 14, 3, '^');
         // The long walk back to the stairs is no longer free. Both pairs sit
         // under open sky: under the staircase steps there is only about 9px
         // between clearing the spikes and braining yourself on the step above,
         // which is not a jump, it is a coin flip.
-        wl.spikes(19, 14, 2, '^');
+        wl.spikes(wl.v.gnd, 14, 2, '^');
         Sfx.teleport();
         wl.msg('up there. good luck.');
       });
@@ -634,13 +766,13 @@ const LEVELS = [
     triggers: [
       {
         x: 16, y: 12, w: 3, h: 6,
-        run(w) { w.spikes(21, 14, 2, '^'); }
+        run(w) { w.spikes(w.v.top, 14, 2, '^'); }
       },
       {
         x: 7, y: 11, w: 4, h: 2,
         run(w) {
           // guards the way onto the top platform, not the door itself
-          crusher(w, 13, 3, 144, 120, 60);
+          crusher(w, 13, 3, 144, 120, w.v.phase);
           w.msg('of course there is a crusher');
         }
       },

@@ -124,21 +124,36 @@ var EXPECTED_UNSOLVED = [13];
 var unsolved = [];
 
 LEVELS.forEach(function (lv, i) {
-  var wins = 0, bestFrames = 1e9, furthest = 0;
-  for (var a = 0; a < ATTEMPTS; a++) {
-    var eps = 0.02 + (a % 20) * 0.03;
-    var r = attempt(i, eps, 1100);
-    if (r.won) { wins++; if (r.frames < bestFrames) bestFrames = r.frames; }
-    else if (r.at > furthest) furthest = r.at;
-    if (wins >= 25) break;
-  }
   var expected = EXPECTED_UNSOLVED.indexOf(i) !== -1;
-  var status = wins > 0 ? 'SOLVABLE'
+  var nVariants = lv.variants || 1;
+  var perVariant = [];
+  var anyFailed = false;
+
+  // Every variant has to stand on its own. Rolling them at random and
+  // declaring the level solvable when *some* run wins would let a broken
+  // variant hide behind its siblings, and the player who rolls it is stuck.
+  for (var v = 0; v < nVariants; v++) {
+    World.forceVariant = v;
+    var wins = 0, bestFrames = 1e9, furthest = 0;
+    for (var a = 0; a < ATTEMPTS; a++) {
+      var eps = 0.02 + (a % 20) * 0.03;
+      var r = attempt(i, eps, 1400);
+      if (r.won) { wins++; if (r.frames < bestFrames) bestFrames = r.frames; }
+      else if (r.at > furthest) furthest = r.at;
+      if (wins >= 15) break;
+    }
+    if (wins === 0) anyFailed = true;
+    perVariant.push(wins > 0 ? bestFrames + 'f' : 'DEAD@' + furthest);
+  }
+  World.forceVariant = null;
+
+  var status = !anyFailed ? 'SOLVABLE'
              : expected ? 'never solved (expected - see finale.js)'
              : '*** NEVER SOLVED ***';
-  if (wins === 0 && !expected) unsolved.push('L' + (i + 1) + ' ' + lv.name);
+  if (anyFailed && !expected) unsolved.push('L' + (i + 1) + ' ' + lv.name);
   console.log('L' + (i + 1) + ' ' + lv.name + ': ' + status +
-    ' (wins=' + wins + (wins ? ', fastest=' + bestFrames + 'f' : ', furthest col=' + furthest) + ')');
+    '  ' + nVariants + ' variant' + (nVariants > 1 ? 's' : '') +
+    ' [' + perVariant.join(' ') + ']');
 });
 
 console.log(unsolved.length === 0

@@ -97,26 +97,36 @@ function sweep(lag) {
 }
 
 var lv = LEVELS[LEVEL];
+var nVariants = lv.variants || 1;
 console.log('L' + (LEVEL + 1) + ' ' + lv.name + ' - vision limited to ' +
-  (LIGHT_R / TILE).toFixed(1) + ' tiles');
+  (LIGHT_R / TILE).toFixed(1) + ' tiles, ' + nVariants + ' variant(s)');
 
 var problems = 0;
 
-[0, 6, LAG_HUMAN, LAG_SLOW].forEach(function (lag) {
-  var r = sweep(lag);
-  var spots = Object.keys(r.where).sort(function (a, b) { return a - b; })
-    .map(function (c) { return 'col ' + c + ' x' + r.where[c]; }).join(', ');
-  console.log('  reaction lag ' + String(lag).padStart(2) + 'f (' + (lag / 60).toFixed(2) + 's): ' +
-    r.wins + '/' + r.total + ' strategies clear it' + (spots ? '   stopped at ' + spots : ''));
-});
-
-// It must be possible to read and survive at a human reaction time...
-var human = sweep(LAG_HUMAN);
-if (human.wins === 0) {
-  console.error('unbeatable at ' + (LAG_HUMAN / 60).toFixed(2) + 's reaction - ' +
-    'the changes land faster than anyone can respond to them');
-  problems++;
+// Each variant is checked on its own. A variant whose changes land somewhere
+// unreadable would otherwise be averaged away by its siblings, and the player
+// who rolls it just dies without ever learning why.
+for (var vi = 0; vi < nVariants; vi++) {
+  World.forceVariant = vi;
+  var line = '  variant ' + vi + ':';
+  [0, LAG_HUMAN, LAG_SLOW].forEach(function (lag) {
+    var r = sweep(lag);
+    line += '  ' + (lag / 60).toFixed(2) + 's->' + r.wins + '/' + r.total;
+  });
+  console.log(line);
 }
+World.forceVariant = null;
+
+// Every variant must be readable and survivable at a human reaction time...
+for (var vh = 0; vh < nVariants; vh++) {
+  World.forceVariant = vh;
+  if (sweep(LAG_HUMAN).wins === 0) {
+    console.error('variant ' + vh + ' is unbeatable at ' + (LAG_HUMAN / 60).toFixed(2) +
+      's reaction - its changes land faster than anyone can respond to them');
+    problems++;
+  }
+}
+World.forceVariant = null;
 
 // ...and reacting late must cost you dearly, or the darkness is decoration.
 // Testing for "different" is not enough: a defanged level can score *better*

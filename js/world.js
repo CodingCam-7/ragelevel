@@ -19,6 +19,19 @@ class World {
       console.error(`Level "${def.name}": expected ${ROWS} rows, got ${def.map.length}`);
     }
 
+    /* Re-rolled on every death, which is the point: a level with variants
+     * cannot be beaten by memorising one run, because the run you memorised
+     * is not necessarily the one you get next. Every variant is authored by
+     * hand and proven beatable, so this stays unpredictable without becoming
+     * unfair -- the dice choose between prepared levels, never build one.
+     *
+     * World.forceVariant lets the checks pin a specific variant so each can
+     * be verified on its own; the game itself never sets it. */
+    const nVariants = def.variants || 1;
+    this.variant = World.forceVariant !== null
+      ? ((World.forceVariant % nVariants) + nVariants) % nVariants
+      : Math.floor(Math.random() * nVariants);
+
     this.grid = [];
     let spawn = { c: 2, r: ROWS - 3 };
     let doorAt = { c: COLS - 4, r: ROWS - 3 };
@@ -541,3 +554,7 @@ class World {
 }
 
 World._scratch = [];
+
+/* null = roll a fresh variant each life (how the game plays). The headless
+ * checks set this to pin one variant at a time so every one gets proven. */
+World.forceVariant = null;
