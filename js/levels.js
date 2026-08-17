@@ -130,6 +130,45 @@ function rammer(w, row) {
  * follows a journey without needing to know one is happening.
  * ------------------------------------------------------------------ */
 
+/**
+ * Build a climb out of ledges: each entry is [col, row, width].
+ *
+ * Geometry that has to be respected or the climb is a wall. A jump clears
+ * about 2.8 tiles, so consecutive ledges may rise at most two rows -- three
+ * is unreachable. Horizontally a jump covers about five tiles, but landing on
+ * a ledge is far tighter than clearing a gap, so three is the practical
+ * spacing. The door sits one row above the ledge it stands on: doorTo(c, r)
+ * puts the door's base at row r, so a ledge at row R takes doorTo(c, R - 1).
+ */
+function ledges(w, list, ch) {
+  list.forEach((L) => w.fill(L[0], L[1], L[2], 1, ch || '#'));
+}
+
+/**
+ * A three-step staircase up to a door at column D, standing on rows 15 / 13 / 11.
+ *
+ * The first step sits at row 15 -- the player's own body row -- so it is a
+ * wall in the path rather than a ledge overhead. That distinction is the
+ * whole trick: a ledge at row 14 is a *ceiling* to someone on the floor, and
+ * you walk underneath it without anything suggesting you should be up there.
+ * A block at row 15 stops you, and getting over it puts you on top of it.
+ *
+ * Steps then rise two rows at a time (32px against a jump of about 44) and
+ * move three columns. `fromRight` says which side the player arrives from and
+ * must match the leg, or the staircase is built behind them and walking at
+ * the door leaves them underneath it. The top ledge always contains D.
+ */
+function stairTo(w, D, fromRight) {
+  ledges(w, fromRight
+    ? [[D + 6, 15, 3], [D + 3, 13, 3], [D, 11, 4]]
+    : [[D - 8, 15, 3], [D - 5, 13, 3], [D - 1, 11, 4]]);
+}
+
+/** Erase a climb again, so the next leg does not inherit last leg's scaffolding. */
+function clearAir(w, topRow, bottomRow) {
+  w.refill(0, topRow, COLS, bottomRow - topRow + 1, ' ');
+}
+
 function journey(w, stops) {
   w.stops = stops;
   w.stop = 0;
@@ -273,11 +312,27 @@ const LEVELS = [
         wl.shakeIt(6);
       };
 
+      /* The climb legs use brittle steps. Standing on one lights a fuse, so
+       * the staircase is dissolving while you are on it and stopping to line
+       * up the next hop is the mistake -- which is this level's whole idea,
+       * moved off the floor and into the air. The top ledge stays solid: a
+       * brittle tile under the door would drop you the moment you arrived. */
+      const climb = (D, fromRight) => (wl) => {
+        wl.refill(7, 16, 18, 1, '#');
+        clearAir(wl, 10, 15);
+        stairTo(wl, D, fromRight);
+        const steps = fromRight ? [[D + 6, 15, 3], [D + 3, 13, 3]]
+                                : [[D - 8, 15, 3], [D - 5, 13, 3]];
+        steps.forEach((L) => wl.fill(L[0], L[1], L[2], 1, 'B'));
+        wl.shakeIt(6);
+        Sfx.crumble();
+      };
+
       journey(w, [
         { col: 28, row: 15, arm: punch(0) },
-        { col: 3,  row: 15, say: 'back you go', arm: punch(1) },
-        { col: 26, row: 15, say: 'and again',   arm: punch(2) },
-        { col: 8,  row: 15, say: 'last one',    arm: punch(3) }
+        { col: 17, row: 10, say: 'up, and quickly', arm: climb(17, true) },
+        { col: 3,  row: 15, say: 'back you go',     arm: punch(2) },
+        { col: 14, row: 10, say: 'again. quicker.', arm: climb(14, false) }
       ]);
       w.msg('the floor is only mostly real', 150);
     },
@@ -294,32 +349,41 @@ const LEVELS = [
     ],
     variants: 4,
     init(w) {
-      // Four crossings, each with its own spike field. Row 15 is wiped before
-      // each leg is laid out, so the fields replace one another instead of
-      // silting up into a wall of spikes with nowhere to land.
-      /* Two constraints shape these. Groups are two wide, not three: with
-       * four legs of three groups a run already asks for twelve spike
-       * clears, and at three wide every one is a near-maximum jump. And
-       * every group sits between columns 8 and 21, because each leg starts
-       * where the last one ended -- at the far edge -- and a hazard armed
-       * three tiles from your feet is a death you cannot answer. */
+      /* Leg 1 runs the floor, leg 2 is a climb, leg 3 drops you back down and
+       * sends you home. The staircase always ascends *from the side you
+       * arrive on toward the door*, which is not decoration: you reach it
+       * walking from the previous door, and a staircase built on the far side
+       * means walking at the door puts you underneath it with nothing to
+       * stand on. Ledges rise two rows and step three columns, the limits of
+       * a jump that also has to land on something. */
       w.v = [
-        [[[8, 2], [14, 2], [20, 2]], [[10, 2], [16, 2], [21, 2]], [[9, 2], [15, 2], [19, 2]], [[8, 2], [13, 2], [18, 2]]],
-        [[[9, 2], [15, 2], [21, 2]], [[8, 2], [13, 2], [19, 2]], [[10, 2], [16, 2], [20, 2]], [[9, 2], [14, 2], [21, 2]]],
-        [[[10, 2], [16, 2], [21, 2]], [[9, 2], [14, 2], [20, 2]], [[8, 2], [13, 2], [19, 2]], [[10, 2], [15, 2], [20, 2]]],
-        [[[8, 2], [13, 2], [19, 2]], [[10, 2], [15, 2], [21, 2]], [[9, 2], [16, 2], [20, 2]], [[8, 2], [14, 2], [19, 2]]]
+        { a: [[8, 2], [14, 2], [20, 2]], door: 18, door2: 14, home: [[10, 2], [16, 2], [22, 2]] },
+        { a: [[9, 2], [15, 2], [21, 2]], door: 15, door2: 17, home: [[10, 2], [15, 2], [21, 2]] },
+        { a: [[10, 2], [16, 2], [21, 2]], door: 20, door2: 12, home: [[9, 2], [15, 2], [21, 2]] },
+        { a: [[8, 2], [15, 2], [22, 2]], door: 16, door2: 19, home: [[11, 2], [17, 2], [23, 2]] }
       ][w.variant];
 
-      const arm = (n) => (wl) => {
-        wl.refill(1, 15, 30, 1, ' ');            // last leg's spikes retract
-        wl.v[n].forEach((g) => wl.spikes(g[0], 15, g[1], '^'));
+      const floorRun = (which) => (wl) => {
+        clearAir(wl, 9, 15);
+        wl.v[which].forEach((g) => wl.spikes(g[0], 15, g[1], '^'));
+      };
+      const climb = (which, fromRight) => (wl) => {
+        const D = wl.v[which];
+        clearAir(wl, 10, 15);
+        stairTo(wl, D, fromRight);
+        /* No spikes under the staircase. Missing a ledge already costs the
+         * entire climb -- you land on the floor and start again from the
+         * bottom -- and spikes there turn a recoverable mistake into a death
+         * without adding a decision anywhere. */
+        wl.shakeIt(6);
+        Sfx.trap();
       };
 
       journey(w, [
-        { col: 29, row: 15, arm: arm(0) },
-        { col: 2,  row: 15, say: 'again',        arm: arm(1) },
-        { col: 28, row: 15, say: 'and again',    arm: arm(2) },
-        { col: 3,  row: 15, say: 'no going back', arm: arm(3) }
+        { col: 29, row: 15, arm: floorRun('a'), delay: 2 },
+        { col: w.v.door, row: 10, say: 'up. obviously.', arm: climb('door', true) },
+        { col: 2, row: 15, say: 'now get down', arm: floorRun('home') },
+        { col: w.v.door2, row: 10, say: 'and back up', arm: climb('door2', false) }
       ]);
     },
     onFakeDoor(w) { nextLeg(w); }
@@ -748,13 +812,16 @@ const LEVELS = [
       /* Which parts of the floor survive, relaid on every leg. '#' means the
        * tile stays but is turned invisible -- solid, undrawn, indistinguishable
        * from the hole beside it -- and '.' means it actually goes. Covers
-       * columns 13-28; the ends stay real so each leg has somewhere to stand,
-       * and no run of holes exceeds two. */
+       * columns 13-28. The ends stay real so each leg has somewhere to stand,
+       * no run of holes exceeds two, and -- learned the hard way -- no run of
+       * surviving tiles is shorter than two either. A single-tile landing has
+       * to be hit exactly and then jumped from immediately, which on tiles you
+       * cannot see is not a read, it is a guess. */
       w.v = [
-        ['##.#..#..#.##.##', '####.#.##..#.#.#', '#.##.###.##.#..#'],
-        ['####.##..#.##.##', '#..#####..##.###', '#.#.#..#.##.#..#'],
-        ['#..#.#.#.#.##.##', '####..##.###..##', '#.#.##.##..#####'],
-        ['####.#..#.###.##', '###.#..###.###.#', '###..#.#####.#.#']
+        ['##.####.###..###', '###..###.####.##', '##.##..###..####'],
+        ['###..##..##.####', '##..####.###.###', '##..##..#####.##'],
+        ['##.##..#####..##', '##.####..####.##', '##..###..####.##'],
+        ['##..##.##..#####', '####..##.###.###', '####..###.###.##']
       ][w.variant];
 
       const lay = (n) => (wl) => {
@@ -769,9 +836,26 @@ const LEVELS = [
         Sfx.slam();
       };
 
+      /* The climb is built out of the same lie the floor is: the two lower
+       * steps are invisible-but-solid, so the door hangs in the air above
+       * nothing and the way up has to be found by walking into it. Only the
+       * ledge holding the door is drawn -- without one visible anchor the
+       * climb is a search rather than a puzzle. */
+      const climb = (D, fromRight) => (wl) => {
+        wl.refill(13, 16, 16, 2, '#');
+        clearAir(wl, 10, 15);
+        stairTo(wl, D, fromRight);
+        const hidden = fromRight ? [[D + 6, 15, 3], [D + 3, 13, 3]]
+                                 : [[D - 8, 15, 3], [D - 5, 13, 3]];
+        hidden.forEach((L) => wl.fill(L[0], L[1], L[2], 1, 'I'));
+        wl.shakeIt(8);
+        Sfx.teleport();
+      };
+
       journey(w, [
         { col: 30, row: 15, arm: lay(0), delay: 2 },
         { col: 2,  row: 15, say: 'some of it is still there', arm: lay(1) },
+        { col: 18, row: 10, say: 'up. find it.',              arm: climb(18, false) },
         { col: 29, row: 15, say: 'less of it now',            arm: lay(2) }
       ]);
       w.msg('nothing suspicious here', 130);
@@ -819,9 +903,24 @@ const LEVELS = [
         wl.shakeIt(5);
       };
 
+      /* The climb leg starts with the controls already inverted and never
+       * flips back: a staircase is the worst possible place to be holding
+       * the wrong direction, because a mistake on flat ground costs a step
+       * and a mistake here costs the whole ascent. */
+      const climb = (D, fromRight) => (wl) => {
+        wl.refill(1, 15, 30, 1, ' ');
+        clearAir(wl, 10, 14);
+        stairTo(wl, D, fromRight);
+        wl.leg = null;                    // no further flips on this leg
+        wl.setMirror(true);
+        wl.shakeIt(8);
+        Sfx.trap();
+      };
+
       journey(w, [
         { col: 29, row: 15, arm: arm(0) },
         { col: 2,  row: 15, say: 'back through it', arm: arm(1) },
+        { col: 20, row: 10, say: 'up, backwards',   arm: climb(20, false) },
         { col: 28, row: 15, say: 'once more',       arm: arm(2) }
       ]);
       w.msg('watch your step', 120);

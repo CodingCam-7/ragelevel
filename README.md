@@ -104,8 +104,20 @@ journey(w, [
 ]);
 ```
 
-Two rules fall out of legs alternating direction, and both were learned by
-watching levels turn out impossible rather than merely hard:
+Legs are not all sideways. Several levels send the door **up**, and the leg
+builds a staircase to reach it — three steps standing on rows 15, 13 and 11.
+Each level's climb does something the level already believes in: level 2's
+steps are brittle and dissolve while you are on them, level 11's lower steps
+are invisible so the door hangs over nothing, and level 12 starts its climb
+with the controls already inverted and never flips them back.
+
+The first step sits at row 15 — the player's own body row — and that detail is
+load-bearing. A ledge at row 14 is a *ceiling* to someone standing on the
+floor: you walk underneath it and nothing suggests you should be up there. A
+block at row 15 stops you, and getting over it puts you on top of it.
+
+Three rules fall out of legs alternating direction, and all three were learned
+by watching levels turn out impossible rather than merely hard:
 
 - **Hazards belong in the middle of the screen.** A leg starts pinned against
   whichever edge the last door was on, so a trap three tiles from that standing
@@ -113,6 +125,10 @@ watching levels turn out impossible rather than merely hard:
 - **Nothing may be direction-dependent.** A spike tucked behind a wall works
   when the wall is always met from one side; met from the other you land into
   the wall with nowhere to go.
+- **A climb must ascend from the side you arrive on.** You reach a leg walking
+  from the previous door, so a staircase built on the far side of the door
+  leaves you standing underneath it with nothing to stand on and no reason to
+  walk past it.
 
 ## Variants
 
