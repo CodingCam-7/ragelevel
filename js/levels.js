@@ -67,6 +67,41 @@ function crusher(w, col, widthTiles, bottomY, period, offset) {
   });
 }
 
+/* A floor-level charger: enters at the right edge and sweeps left along the
+ * ground. Exactly one tile tall, so an ordinary jump clears it with room to
+ * spare -- the difficulty is noticing in time, not the precision of the hop.
+ * Measured, the window to jump is a comfortable ~18 frames; the window to
+ * *decide* is about 19.
+ *
+ * It announces itself the moment it spawns. Most of its approach happens in
+ * peripheral vision, so without the shake and the siren the first warning a
+ * player gets is the death.
+ *
+ * RAM_SPEED is load-bearing and has a floor. The player runs at PHYS.maxRun
+ * (2.4), so a charger slower than that loses the race to the door outright:
+ * at 2.0 a sprinting player walks into the door untouched and the trap never
+ * fires at all. Anything at or below ~2.2 silently disarms it -- and nothing
+ * about a disarmed trap looks broken, which is why harness.js checks that a
+ * sprinting player actually dies to it. */
+const RAM_SPEED = 2.4;
+const RAM_WIDE = 2;
+
+function rammer(w, row) {
+  w.shakeIt(6);
+  Sfx.tone(150, 0.26, 'sawtooth', 0.055, 70);
+  Sfx.noise(0.18, 0.045);
+  return w.mover({
+    x: VW,                 // just off the right edge, so it slides into view
+    y: row * TILE,
+    w: RAM_WIDE * TILE,
+    h: TILE,
+    vx: -RAM_SPEED,
+    style: 'rammer',
+    solid: false,          // it kills, it does not carry or block
+    deadly: true
+  });
+}
+
 const LEVELS = [
 
   /* ---------------------------------------------------------------- 1 */
@@ -248,7 +283,16 @@ const LEVELS = [
       crusher(w, 17, 3, 224, 160, 80);
       crusher(w, 24, 3, 224, 140, 40);
       w.msg('timing is everything', 140);
-    }
+    },
+    triggers: [
+      {
+        // Three tiles short of the door, with the level apparently beaten.
+        // The charger enters behind the door and sweeps back across it, so
+        // the last stretch has to be jumped rather than walked.
+        x: 26, y: 10, w: 1, h: 8,
+        run(w) { rammer(w, 15); w.msg('not so fast'); }
+      }
+    ]
   },
 
   /* ---------------------------------------------------------------- 9 */

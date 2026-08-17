@@ -184,6 +184,61 @@ LEVELS.forEach(function (lv, i) {
     (restored && cleared ? 'ok' : 'FAILED'));
 })();
 
+// --- level 8's charger must actually be a threat ---------------------------
+// A hazard that is too slow to catch anyone still spawns, still animates, and
+// still passes every other check -- the level just quietly stops being hard.
+// So assert both halves: a player who sprints at the door dies to it, and a
+// player who jumps on cue lives.
+(function () {
+  var LV = 7;   // SQUISH
+
+  function run(mode, jumpAt) {
+    var w = new World(LEVELS[LV], Game);
+    Game.world = w; Game.state = 'play'; Game.levelDeaths = 0;
+    w.movers.length = 0;                       // drop the ceiling crushers
+    w.player.x = 25 * TILE; w.player.y = 15 * TILE + 3;
+    w.player.vx = 0; w.player.vy = 0;
+    var trig = -1;
+    for (var f = 0; f < 300; f++) {
+      Input.down = Object.create(null);
+      Input.hit = Object.create(null);
+      Input.down.right = true;
+      if (trig >= 0 && jumpAt >= 0) {
+        var d = f - trig;
+        if (d === jumpAt) { Input.hit.jump = true; Input.down.jump = true; }
+        else if (d > jumpAt && d < jumpAt + 14) { Input.down.jump = true; }
+      }
+      w.update();
+      if (trig < 0) {
+        for (var i = 0; i < w.movers.length; i++) {
+          if (w.movers[i].style === 'rammer') trig = f;
+        }
+      }
+      if (w.state !== 'play') return { end: w.state, at: trig < 0 ? -1 : f - trig };
+    }
+    return { end: 'timeout', at: -1 };
+  }
+
+  var blind = run('sprint', -1);
+  if (blind.end !== 'dead') {
+    console.error('L8 charger: a player who sprints at the door survives it (' +
+      blind.end + ') - RAM_SPEED (' + RAM_SPEED + ') is too slow to intercept, ' +
+      'so the trap never fires');
+    problems++;
+  }
+
+  var survivable = 0;
+  for (var j = 0; j < 40; j++) if (run('sprint', j).end !== 'dead') survivable++;
+  if (survivable < 6) {
+    console.error('L8 charger: only ' + survivable + ' jump timings survive - too tight to be fair');
+    problems++;
+  }
+
+  console.log('L8 charger is lethal (' + (blind.at / 60).toFixed(2) + 's to react) and ' +
+    'jumpable (' + survivable + ' timings work) -> ' +
+    (blind.end === 'dead' && survivable >= 6 ? 'ok' : 'FAILED'));
+})();
+
 // --- dynamic bot run ------------------------------------------------------
 // Crude bot: hold right, jump when blocked or when a gap/spike is ahead.
 // The point is to exercise triggers, movers and collision, not to actually win.

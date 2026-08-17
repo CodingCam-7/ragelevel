@@ -42,7 +42,7 @@ Fourteen levels, each built around one betrayal:
 | 5 | Look Down | The "pit" is safe. Jumping over it is not |
 | 6 | Fake News | Half the bridge is a painting |
 | 7 | Catch Me | The door refuses to be caught, three times |
-| 8 | Squish | Ceiling crushers on offset timers |
+| 8 | Squish | Ceiling crushers on offset timers, then a charger guards the door |
 | 9 | Lights Out | The lights go out over a spike field |
 | 10 | Upside Down | Gravity inverts; the exit is on the ceiling |
 | 11 | Trapdoor | The floor vanishes, except for the parts you can't see |

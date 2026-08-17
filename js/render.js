@@ -207,6 +207,16 @@ const Render = {
         for (let i = 0; i < m.w; i += TILE) {
           this.spike(x + i, y + m.h - TILE, 'v');
         }
+      } else if (m.style === 'rammer') {
+        // Leading edge first, so the spikes read as the business end even at
+        // speed. Body is drawn short and heavy to sell it riding the floor.
+        ctx.fillStyle = PAL.metalDim;
+        ctx.fillRect(x, y + 2, m.w, m.h - 2);
+        ctx.fillStyle = PAL.metal;
+        ctx.fillRect(x + 4, y + 4, m.w - 6, m.h - 7);
+        ctx.fillStyle = PAL.metalDim;
+        for (let i = 8; i < m.w - 2; i += 8) ctx.fillRect(x + i, y + 6, 3, 3);
+        this.spike(x, y, '<');
       } else if (m.style === 'wall') {
         ctx.fillStyle = PAL.spikeDim;
         ctx.fillRect(x, y, m.w, m.h);
