@@ -70,7 +70,20 @@ function run(trial, maxFrames) {
 
     var blocked = isSolidChar(w.at(pc + dir, pr));
     var gap = !isSolidChar(w.at(pc + dir, pr + 1));
-    var spike = isSpikeChar(w.at(pc + dir, pr)) || isSpikeChar(w.at(pc + 2 * dir, pr));
+
+    // Measure the obstacle rather than just noticing it, so the jump can be
+    // held in proportion. Spotting a spike two tiles off and then picking a
+    // hold at random cannot reliably clear a two-wide field, which made
+    // hazards on the walk back read as "level 14 is unbeatable".
+    var hazardAt = 0, hazardWidth = 0;
+    for (var d = 1; d <= 4; d++) {
+      var c = pc + d * dir;
+      if (isSpikeChar(w.at(c, pr)) || isSpikeChar(w.at(c, pr + 1))) {
+        if (hazardAt === 0) hazardAt = d;
+        hazardWidth++;
+      } else if (hazardAt !== 0) break;
+    }
+    var spike = hazardAt !== 0 && hazardAt <= 2;
     var needHeight = feet(w) > target.feetRow * TILE + 1 && Math.abs(pc - target.col) <= 3;
 
     var wantJump = p.onGround && (blocked || gap || spike || needHeight || rand() < eps);
@@ -82,7 +95,11 @@ function run(trial, maxFrames) {
     if (idleFor > 0) idleFor--;
     else Input.down[dir > 0 ? 'right' : 'left'] = true;
 
-    if (wantJump && jumpHold === 0) { Input.hit.jump = true; jumpHold = 6 + Math.floor(rand() * 17); }
+    if (wantJump && jumpHold === 0) {
+      Input.hit.jump = true;
+      var base = 6 + hazardWidth * 5;
+      jumpHold = Math.max(3, Math.min(24, base + Math.floor(rand() * 10) - 4));
+    }
     if (jumpHold > 0) { Input.down.jump = true; jumpHold--; }
 
     w.update();

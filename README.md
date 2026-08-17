@@ -68,11 +68,11 @@ Fourteen levels, each built around one betrayal:
 | 7 | Catch Me | The door refuses to be caught, three times |
 | 8 | Squish | Ceiling crushers on offset timers, then a charger guards the door |
 | 9 | Lights Out | The lights go out and the room rebuilds itself four times |
-| 10 | Upside Down | Gravity inverts; the exit is on the ceiling |
-| 11 | Trapdoor | The floor vanishes, except for the parts you can't see |
-| 12 | Mirror | Left and right swap. Then swap back |
-| 13 | Spike Train | A wall of spikes sweeps the level while you run |
-| 14 | Grand Finale | The door is a decoy, and there's a crusher |
+| 10 | Upside Down | Gravity inverts, the exit is on the ceiling, and gravity stutters |
+| 11 | Trapdoor | The floor vanishes, except for uneven parts you can't see |
+| 12 | Mirror | Left and right swap. Four times, over spikes |
+| 13 | Spike Train | A wall of spikes sweeps the level, and it is faster than it looks |
+| 14 | Grand Finale | The door is a decoy, the walk back is trapped, and there's a crusher |
 
 The game never tells you where it lied. Invisible blocks are never drawn and
 phantom blocks are drawn as ordinary solid ones, on your fiftieth attempt as

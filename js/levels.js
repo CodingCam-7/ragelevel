@@ -465,7 +465,8 @@ const LEVELS = [
     name: 'UPSIDE DOWN',
     map: [
       FULL, FULL,
-      place({ 20: 'vv' }),
+      // the ceiling becomes the floor, so this is the run you actually walk
+      place({ 12: 'vv', 20: 'vv', 25: 'v' }),
       place({ 28: 'D' }),
       ...Array(5).fill(EMPTY),
       place({ 8: rep('#', 5) }),
@@ -485,6 +486,27 @@ const LEVELS = [
           w.msg('down is a social construct');
           Sfx.trap();
         }
+      },
+      // A stutter, not a reversal: gravity drops you for a moment and then
+      // takes it back. Long enough to fall five tiles and lose the rhythm,
+      // short enough that the ceiling catches you again on the way back.
+      {
+        x: 22, y: 0, w: 2, h: 8,
+        run(w) {
+          w.setGravity(1);
+          w.player.vy = 0;
+          w.player.onGround = false;
+          w.shakeIt(7);
+          w.msg('oh no you dont');
+          Sfx.trap();
+          w.after(26, (wl) => {
+            wl.setGravity(-1);
+            wl.player.vy = 0;
+            wl.player.onGround = false;
+            wl.shakeIt(6);
+            Sfx.teleport();
+          });
+        }
       }
     ]
   },
@@ -502,9 +524,12 @@ const LEVELS = [
       {
         x: 9, y: 10, w: 3, h: 8,
         run(w) {
-          for (let c = 13; c <= 26; c++) {
-            const safe = (c <= 14) || (c >= 17 && c <= 18) ||
-                         (c >= 21 && c <= 22) || (c >= 25);
+          // The surviving tiles used to come in pairs at a fixed spacing, so
+          // one crossing taught you the whole rhythm. Now the runs and the
+          // gaps are both uneven, and two of the landings are a single tile.
+          for (let c = 13; c <= 28; c++) {
+            const safe = (c <= 14) || (c === 17) ||
+                         (c >= 21 && c <= 22) || (c === 25) || (c >= 28);
             if (safe) { w.set(c, 16, 'I'); w.set(c, 17, ' '); }
             else w.crumbleNow(c, 16, 1, 2);
           }
@@ -521,16 +546,26 @@ const LEVELS = [
     name: 'MIRROR',
     map: [
       ...Array(15).fill(EMPTY),
-      place({ 2: 'P', 18: '^^', 29: 'D' }),
+      place({ 2: 'P', 14: '^', 18: '^^', 23: '^', 29: 'D' }),
       FULL, FULL
     ],
     triggers: [
+      // Four flips instead of two, and spikes placed so the flips land while
+      // you are committed to a jump rather than standing still thinking.
       {
-        x: 11, y: 10, w: 2, h: 8,
+        x: 10, y: 10, w: 1, h: 8,
         run(w) { w.setMirror(true); w.shakeIt(8); w.msg('left is right now'); Sfx.trap(); }
       },
       {
-        x: 24, y: 10, w: 2, h: 8,
+        x: 16, y: 10, w: 1, h: 8,
+        run(w) { w.setMirror(false); w.shakeIt(6); w.msg('or is it'); Sfx.trap(); }
+      },
+      {
+        x: 21, y: 10, w: 1, h: 8,
+        run(w) { w.setMirror(true); w.shakeIt(8); w.msg('again'); Sfx.trap(); }
+      },
+      {
+        x: 26, y: 10, w: 1, h: 8,
         run(w) { w.setMirror(false); w.shakeIt(8); w.msg('never mind'); Sfx.trap(); }
       }
     ]
@@ -547,9 +582,12 @@ const LEVELS = [
       place({ 0: rep('#', 18), 20: rep('#', 12) })
     ],
     init(w) {
+      // The player runs at PHYS.maxRun (2.4), so the train's speed is really
+      // a budget for how much time you may spend on the obstacles in its way.
+      // At 1.25 there was enough slack to stop and think about each one.
       w.mover({
         x: -5 * TILE, y: 0, w: 5 * TILE, h: VH,
-        vx: 1.25, style: 'wall', solid: false, deadly: true
+        vx: 1.7, style: 'wall', solid: false, deadly: true
       });
       w.msg('RUN', 120);
     },
@@ -584,6 +622,11 @@ const LEVELS = [
         wl.doorTo(17, 10);
         wl.door.hidden = false;
         wl.spikes(26, 14, 3, '^');
+        // The long walk back to the stairs is no longer free. Both pairs sit
+        // under open sky: under the staircase steps there is only about 9px
+        // between clearing the spikes and braining yourself on the step above,
+        // which is not a jump, it is a coin flip.
+        wl.spikes(19, 14, 2, '^');
         Sfx.teleport();
         wl.msg('up there. good luck.');
       });
@@ -597,7 +640,7 @@ const LEVELS = [
         x: 7, y: 11, w: 4, h: 2,
         run(w) {
           // guards the way onto the top platform, not the door itself
-          crusher(w, 13, 3, 144, 130, 60);
+          crusher(w, 13, 3, 144, 120, 60);
           w.msg('of course there is a crusher');
         }
       },
@@ -606,7 +649,7 @@ const LEVELS = [
         run(w) {
           w.crumbleNow(8, 13, 2, 1);
           w.setDark(true);
-          w.after(160, (wl) => { wl.setDark(false); wl.msg('kidding'); });
+          w.after(240, (wl) => { wl.setDark(false); wl.msg("kidding"); });
         }
       }
     ]
