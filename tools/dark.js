@@ -50,20 +50,27 @@ function sighted(trigger, lag) {
   Game.world = w; Game.state = 'play'; Game.levelDeaths = 0;
   var seenQueue = [];
 
-  for (var f = 0; f < 800; f++) {
+  for (var f = 0; f < 2600; f++) {
     Input.down = Object.create(null);
     Input.hit = Object.create(null);
-    Input.down.right = true;
 
     var p = w.player;
+    // The level is a journey now: the door moves and the legs alternate
+    // direction, so "walk right" is no longer the strategy. Head for whatever
+    // the door currently is, and look for hazards that way.
+    var pcx = p.x + p.w / 2;
+    var dir = (w.door.x + w.door.w / 2) >= pcx ? 1 : -1;
+    Input.down[dir > 0 ? 'right' : 'left'] = true;
+
     var footRow = Math.floor((p.y + p.h + 1) / TILE);
     var bodyRow = Math.floor((p.y + p.h - 1) / TILE);
 
     // nearest hazard inside the bubble: a spike, a wall, or a hole to fall in
     var danger = -1;
     for (var dx = 2; dx <= LIGHT_R; dx += 2) {
-      var c = Math.floor((p.x + p.w + dx) / TILE);
-      if (c >= COLS) break;
+      var edge = dir > 0 ? p.x + p.w + dx : p.x - dx;
+      var c = Math.floor(edge / TILE);
+      if (c >= COLS || c < 0) break;
       if (isSpikeChar(w.at(c, bodyRow)) ||
           isSolidChar(w.at(c, bodyRow)) ||
           !isSolidChar(w.at(c, footRow))) { danger = dx; break; }

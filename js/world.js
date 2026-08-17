@@ -123,6 +123,21 @@ class World {
 
   clear(c, r, w, h) { this.fill(c, r, w, h, ' '); }
 
+  /**
+   * Fill a span and cancel any crumble fuses inside it. Brittle tiles light a
+   * fuse when stood on and vanish ~15 frames later, so a floor rebuilt for a
+   * new leg would otherwise be deleted a moment after it appeared, by fuses
+   * lit before the rebuild happened.
+   */
+  refill(c, r, w, h, ch) {
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        this.set(c + i, r + j, ch);
+        delete this.crumbling[(c + i) + ',' + (r + j)];
+      }
+    }
+  }
+
   /** Blocks slam into existence with a puff of debris. */
   wall(c, r, w, h, ch) {
     this.fill(c, r, w, h, ch || '#');

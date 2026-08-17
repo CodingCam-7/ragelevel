@@ -111,6 +111,49 @@ function rammer(w, row) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Journeys
+ *
+ * A single screen is 32 tiles, so a straight run at PHYS.maxRun is over in
+ * roughly 200 frames no matter how many hazards are stacked on it. Adding
+ * more traps makes a level harder; it does not make it longer. The only
+ * lever for length is making the player cross the screen again.
+ *
+ * So a journey is a list of stops. Reaching the door at one stop does not
+ * finish the level -- the door moves to the next stop and that leg's hazards
+ * arm behind it. Only the last stop is a real door. Three stops turn a 200
+ * frame level into a 600 frame one, and every leg can be a different fight.
+ *
+ * This rides on the fake-door machinery the finale already used: checkDoor()
+ * hides a fake door and calls the level's onFakeDoor, which is where legs
+ * advance. The solver walks toward whatever the door currently is, so it
+ * follows a journey without needing to know one is happening.
+ * ------------------------------------------------------------------ */
+
+function journey(w, stops) {
+  w.stops = stops;
+  w.stop = 0;
+  w.doorTo(stops[0].col, stops[0].row);
+  w.door.fake = stops.length > 1;
+  w.door.hidden = false;
+  if (stops[0].arm) stops[0].arm(w);
+}
+
+/** Advance to the next leg. Call from a level's onFakeDoor. */
+function nextLeg(w) {
+  const s = w.stops[++w.stop];
+  if (!s) return;
+  w.door.hidden = false;
+  w.doorTo(s.col, s.row);
+  w.door.fake = w.stop < w.stops.length - 1;
+  w.shakeIt(6);
+  Sfx.teleport();
+  if (s.say) w.msg(s.say);
+  // A beat before the new leg's hazards land, so the player has started
+  // moving and cannot simply stand still and watch them arrive.
+  if (s.arm) w.after(s.delay || 22, s.arm);
+}
+
 const LEVELS = [
 
   /* ---------------------------------------------------------------- 1 *
@@ -130,7 +173,7 @@ const LEVELS = [
       place({ 3: 'P', 20: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
       w.phase = 0;
       // Where it runs to, and what it leaves in the road, is re-rolled every
@@ -138,7 +181,8 @@ const LEVELS = [
       w.v = [
         { flee: 28, back: 4, spike: 12, mid: 17, pillar: 17 },
         { flee: 26, back: 6, spike: 18, mid: 11, pillar: 11 },
-        { flee: 29, back: 3, spike: 9,  mid: 21, pillar: 21 }
+        { flee: 29, back: 3, spike: 9,  mid: 21, pillar: 21 },
+        { flee: 27, back: 5, spike: 15, mid: 20, pillar: 20 }
       ][w.variant];
       w.msg('walk right. touch door. easy.', 150);
     },
@@ -189,42 +233,55 @@ const LEVELS = [
       place({ 0: rep('#', 7), 7: rep('B', 18), 25: rep('#', 7) }),
       EMPTY
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // Which stretches of floor are lying, re-rolled every life. Holes never
-      // land closer than four tiles apart in any variant, so there is always
-      // ground to take off from.
+      /* Four crossings of the same brittle span, and the holes are punched
+       * somewhere different on each one. The floor is refilled between legs
+       * on purpose: brittle tiles crumble wherever you stood, so without a
+       * rebuild the return trip would be over the trail of holes you left
+       * on the way out, which is not difficult, it is impossible. */
+      /* One layout per leg, not a growing pile: the holes are replaced each
+       * crossing rather than accumulated. Piling them up leaves single-tile
+       * landings, and on a brittle floor a single-tile landing crumbles under
+       * you while you line up the next jump.
+       *
+       * Every hole also sits between columns 10 and 21. Each leg starts where
+       * the last one ended, at the far edge, and a hole opened four tiles from
+       * a standing start on a floor that is already dissolving is not a jump
+       * anyone can be asked to make. */
       w.v = [
-        { a: 14, aw: 2, b: 21, bw: 3, c: 26 },
-        { a: 12, aw: 3, b: 19, bw: 2, c: 25 },
-        { a: 15, aw: 2, b: 20, bw: 3, c: 27 }
+        [[[11, 2], [19, 3]], [[13, 2], [20, 2]], [[10, 3], [18, 2]], [[12, 2], [19, 2]]],
+        [[[12, 3], [20, 2]], [[10, 2], [18, 3]], [[13, 2], [21, 2]], [[11, 3], [19, 2]]],
+        [[[10, 2], [18, 2]], [[12, 3], [20, 2]], [[11, 2], [19, 3]], [[13, 2], [21, 2]]],
+        [[[13, 2], [21, 2]], [[11, 2], [19, 2]], [[12, 3], [20, 3]], [[10, 2], [18, 2]]]
       ][w.variant];
+
+      // where the one brittle stretch sits on each leg
+      w.brittle = [[8, 3], [22, 3], [9, 3], [21, 3]];
+
+      const punch = (n) => (wl) => {
+        /* The whole span used to be brittle, which does not survive being
+         * crossed four times: every tile you stand on dissolves behind you,
+         * so a leg that needs even a step backwards is already lost. Now the
+         * rebuilt floor is solid and brittle is a *feature* placed on it --
+         * one stretch per leg, away from the holes, that punishes standing
+         * around rather than punishing having been there at all. */
+        wl.refill(7, 16, 18, 1, '#');               // the floor grows back
+        wl.v[n].forEach((h) => wl.crumbleNow(h[0], 16, h[1], 1));
+        const b = wl.brittle[n];
+        wl.refill(b[0], 16, b[1], 1, 'B');
+        wl.shakeIt(6);
+      };
+
+      journey(w, [
+        { col: 28, row: 15, arm: punch(0) },
+        { col: 3,  row: 15, say: 'back you go', arm: punch(1) },
+        { col: 26, row: 15, say: 'and again',   arm: punch(2) },
+        { col: 8,  row: 15, say: 'last one',    arm: punch(3) }
+      ]);
       w.msg('the floor is only mostly real', 150);
     },
-    triggers: [
-      // three separate holes now, and the brittle stretch between them is
-      // still counting down under your feet -- standing still to think about
-      // the next one is its own mistake
-      {
-        x: 9, y: 12, w: 1, h: 6,
-        run(w) { w.crumbleNow(w.v.a, 16, w.v.aw, 1); w.shakeIt(5); }
-      },
-      {
-        x: 16, y: 12, w: 1, h: 6,
-        run(w) {
-          w.crumbleNow(w.v.b, 16, w.v.bw, 1);
-          w.shakeIt(6);
-          w.msg('JUMP');
-        }
-      },
-      // and the solid-looking run-up to the door is not that either
-      {
-        x: 23, y: 12, w: 1, h: 6,
-        run(w) {
-          w.after(16, (wl) => { wl.crumbleNow(wl.v.c, 16, 2, 1); wl.shakeIt(5); wl.msg('one more'); });
-        }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* ---------------------------------------------------------------- 3 */
@@ -235,43 +292,37 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // Wave positions and widths both move. The rhythm you learned last life
-      // is the wrong rhythm this one.
+      // Four crossings, each with its own spike field. Row 15 is wiped before
+      // each leg is laid out, so the fields replace one another instead of
+      // silting up into a wall of spikes with nowhere to land.
+      /* Two constraints shape these. Groups are two wide, not three: with
+       * four legs of three groups a run already asks for twelve spike
+       * clears, and at three wide every one is a near-maximum jump. And
+       * every group sits between columns 8 and 21, because each leg starts
+       * where the last one ended -- at the far edge -- and a hazard armed
+       * three tiles from your feet is a death you cannot answer. */
       w.v = [
-        { a: 9,  aw: 3, b: 16, bw: 3, c: 22, cw: 3, back: 17 },
-        { a: 8,  aw: 2, b: 15, bw: 3, c: 21, cw: 2, back: 16 },
-        { a: 10, aw: 3, b: 17, bw: 2, c: 23, cw: 3, back: 18 }
+        [[[8, 2], [14, 2], [20, 2]], [[10, 2], [16, 2], [21, 2]], [[9, 2], [15, 2], [19, 2]], [[8, 2], [13, 2], [18, 2]]],
+        [[[9, 2], [15, 2], [21, 2]], [[8, 2], [13, 2], [19, 2]], [[10, 2], [16, 2], [20, 2]], [[9, 2], [14, 2], [21, 2]]],
+        [[[10, 2], [16, 2], [21, 2]], [[9, 2], [14, 2], [20, 2]], [[8, 2], [13, 2], [19, 2]], [[10, 2], [15, 2], [20, 2]]],
+        [[[8, 2], [13, 2], [19, 2]], [[10, 2], [15, 2], [21, 2]], [[9, 2], [16, 2], [20, 2]], [[8, 2], [14, 2], [19, 2]]]
       ][w.variant];
+
+      const arm = (n) => (wl) => {
+        wl.refill(1, 15, 30, 1, ' ');            // last leg's spikes retract
+        wl.v[n].forEach((g) => wl.spikes(g[0], 15, g[1], '^'));
+      };
+
+      journey(w, [
+        { col: 29, row: 15, arm: arm(0) },
+        { col: 2,  row: 15, say: 'again',        arm: arm(1) },
+        { col: 28, row: 15, say: 'and again',    arm: arm(2) },
+        { col: 3,  row: 15, say: 'no going back', arm: arm(3) }
+      ]);
     },
-    triggers: [
-      { x: 5, y: 10, w: 1, h: 8, run(w) { w.spikes(w.v.a, 15, w.v.aw, '^'); } },
-      {
-        x: 12, y: 10, w: 1, h: 8,
-        run(w) {
-          w.spikes(w.v.b, 15, w.v.bw, '^');
-          w.msg('again');
-        }
-      },
-      {
-        x: 19, y: 10, w: 1, h: 8,
-        run(w) {
-          w.spikes(w.v.c, 15, w.v.cw, '^');
-          // far enough behind that it cuts off the retreat without spearing
-          // the player who just walked over the trigger
-          w.after(10, (wl) => { wl.spikes(wl.v.back, 15, 2, '^'); wl.msg('no going back'); });
-        }
-      },
-      // A fourth wave by the door was tried and removed: with the third wave
-      // already filling 22-24, every placement for it left a one-tile strip
-      // to land on and take off from again, which is a precision demand this
-      // level does not otherwise make. Three waves of three is the hardening.
-      {
-        x: 26, y: 10, w: 1, h: 8,
-        run(w) { w.msg('of course you are not done'); }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* ---------------------------------------------------------------- 4 */
@@ -285,28 +336,52 @@ const LEVELS = [
       place({ 0: rep('#', 6), 19: '#', 21: rep('#', 11) }),
       FULL, FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // The phantom is placed here rather than baked into the map, so which
-      // tile of the upper walkway is the lie moves every life. Counting your
-      // steps to it is no longer a strategy.
+      /* Three crossings of the upper walkway, and the plank that is not
+       * really there moves every time. Falling through is survivable -- the
+       * floor is three rows down and the step at column 19 lets you climb
+       * back -- which is the point: the cost of the lie is the climb, paid
+       * again and again. Phantoms stay inside 7-15, clear of both ends. */
       w.v = [
-        { phantom: 8,  wall: 25, spike: 27 },
-        { phantom: 12, wall: 24, spike: 27 },
-        { phantom: 15, wall: 26, spike: 28 }
+        [{ phantom: 8,  wall: 23, spike: 26 }, { phantom: 13 }, { phantom: 10, wall: 24, spike: 26 }],
+        [{ phantom: 12, wall: 24, spike: 26 }, { phantom: 9 },  { phantom: 15, wall: 23, spike: 26 }],
+        [{ phantom: 15, wall: 23, spike: 26 }, { phantom: 11 }, { phantom: 7,  wall: 24, spike: 26 }],
+        [{ phantom: 10, wall: 24, spike: 26 }, { phantom: 14 }, { phantom: 12, wall: 23, spike: 26 }]
       ][w.variant];
-      w.set(w.v.phantom, 12, 'F');
+
+      const arm = (n) => (wl) => {
+        const L = wl.v[n];
+        wl.refill(0, 12, 18, 1, '#');          // the walkway is made whole
+        wl.set(L.phantom, 12, 'F');            // ...except for one plank
+        // and the far platform is swept, or each leg's wall and spikes stack
+        // on top of the last leg's until the approach is a solid barricade
+        wl.refill(22, 10, 10, 2, ' ');
+        wl.leg = L;
+        wl.armed = false;
+      };
+
+      journey(w, [
+        { col: 30, row: 11, arm: arm(0), delay: 2 },
+        { col: 2,  row: 11, say: 'back across it', arm: arm(1) },
+        { col: 29, row: 11, say: 'last time',      arm: arm(2) }
+      ]);
       w.msg('solid ground, all the way across', 150);
     },
-    triggers: [
-      {
-        x: 21, y: 8, w: 3, h: 4,
-        run(w) {
-          w.wall(w.v.wall, 10, 1, 2);
-          w.after(8, (wl) => { wl.spikes(wl.v.spike, 11, 2, '^'); wl.msg('land carefully'); });
-        }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); },
+    update(w) {
+      /* The far-side wall and its spikes arm once per leg, when you commit to
+       * the right-hand platform. The middle leg has no wall at all: it runs
+       * right-to-left, so the player begins that leg already standing past
+       * column 22, and the wall would rise on top of them the instant the leg
+       * started. Its challenge is the phantom instead. */
+      if (!w.leg || w.armed || !w.leg.wall) return;
+      const c = (w.player.x + w.player.w / 2) / TILE;
+      if (c < 22) return;
+      w.armed = true;
+      w.wall(w.leg.wall, 10, 1, 2);
+      w.after(8, (wl) => { wl.spikes(wl.leg.spike, 11, 2, '^'); wl.msg('land carefully'); });
+    }
   },
 
   /* ---------------------------------------------------------------- 5 */
@@ -315,29 +390,52 @@ const LEVELS = [
     map: [
       ...Array(15).fill(EMPTY),
       place({ 2: 'P', 29: 'D' }),
-      place({ 0: rep('#', 13), 13: rep('I', 6), 19: rep('#', 13) }),
-      place({ 0: rep('#', 13), 19: rep('#', 13) })
+      FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      w.dropped = false;
-      // Both which stretch is safe-looking and where the honest gap waits
-      // are re-rolled, so "the pit is fine" and "this one is not" swap places.
+      /* Two pits per leg: one you must walk straight across, and one you
+       * must jump. Neither looks different from the other. Which is which
+       * moves every leg and every life, so the only way through is to stop
+       * trusting the shape of a gap entirely. */
       w.v = [
-        { real: 24, zone: [11, 20] },
-        { real: 22, zone: [11, 20] },
-        { real: 26, zone: [12, 21] }
+        [{ i: 13, iw: 6, gap: 22 }, { i: 18, iw: 5, gap: 10 }, { i: 11, iw: 5, gap: 20 }],
+        [{ i: 15, iw: 5, gap: 9 },  { i: 10, iw: 6, gap: 21 }, { i: 17, iw: 4, gap: 11 }],
+        [{ i: 12, iw: 6, gap: 21 }, { i: 17, iw: 5, gap: 10 }, { i: 13, iw: 4, gap: 20 }],
+        [{ i: 16, iw: 4, gap: 10 }, { i: 11, iw: 6, gap: 22 }, { i: 15, iw: 5, gap: 9 }]
       ][w.variant];
+
+      const arm = (n) => (wl) => {
+        const L = wl.v[n];
+        wl.refill(0, 16, COLS, 2, '#');
+        // the lie: invisible floor with nothing underneath it
+        for (let i = 0; i < L.iw; i++) { wl.set(L.i + i, 16, 'I'); wl.set(L.i + i, 17, ' '); }
+        // and one honest hole, which has to be jumped
+        wl.crumbleNow(L.gap, 16, 2, 2);
+        wl.dropped = false;
+        wl.zone = [L.i - 2, L.i + L.iw + 1];
+        wl.shakeIt(5);
+      };
+
+      journey(w, [
+        { col: 29, row: 15, arm: arm(0) },
+        { col: 2,  row: 15, say: 'mind the gap. again.', arm: arm(1) },
+        { col: 28, row: 15, say: 'last one', arm: arm(2) }
+      ]);
       w.msg('mind the gap', 130);
     },
+    onFakeDoor(w) { nextLeg(w); },
     update(w) {
-      // Jumping over the "gap" is the mistake. Walking across it is the answer.
+      // Jumping over the invisible stretch is the mistake. Walking it is the
+      // answer -- but only over that stretch, and it moves.
+      if (!w.zone) return;
       const p = w.player;
       const c = Math.floor((p.x + p.w / 2) / TILE);
-      if (!w.dropped && !p.onGround && p.vy < 0 && c >= w.v.zone[0] && c <= w.v.zone[1]) {
+      if (!w.dropped && !p.onGround && p.vy < 0 && c >= w.zone[0] && c <= w.zone[1]) {
         w.dropped = true;
         w.mover({
-          x: 10 * TILE, y: -TILE * 3, w: 11 * TILE, h: TILE * 3,
+          x: (w.zone[0] - 1) * TILE, y: -TILE * 3,
+          w: (w.zone[1] - w.zone[0] + 3) * TILE, h: TILE * 3,
           vy: 6.5, style: 'spikebar', solid: false, deadly: true,
           tick(m) { if (m.y > VH) m.dead = true; }
         });
@@ -345,20 +443,7 @@ const LEVELS = [
         w.msg('WHO SAID JUMP');
         Sfx.slam();
       }
-    },
-    triggers: [
-      // Having just been punished for jumping a gap, you are handed a gap
-      // that has to be jumped. The lesson this level teaches is only true
-      // once, which is the entire point of it.
-      {
-        x: 21, y: 10, w: 1, h: 8,
-        run(w) {
-          w.crumbleNow(w.v.real, 16, 2, 2);
-          w.shakeIt(6);
-          w.msg('this one is real');
-        }
-      }
-    ]
+    }
   },
 
   /* ---------------------------------------------------------------- 6 */
@@ -366,25 +451,46 @@ const LEVELS = [
     name: 'FAKE NEWS',
     map: [
       ...Array(14).fill(EMPTY),
-      // Laid down in init() per variant, not baked in here.
-      EMPTY,
+      EMPTY,                 // the bridge is laid down per leg
       place({ 2: 'P', 28: 'D' }),
       place({ 0: rep('#', 8), 24: rep('#', 8) }),
       place({ 0: rep('#', 8), 24: rep('#', 8) })
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      /* The old bridge alternated ## FF ## FF: every gap two wide, every
-       * landing two wide, so one crossing taught you all of it. Each of these
-       * is irregular in both, and which one you get is re-rolled every life,
-       * so the bridge has to be read rather than remembered. No gap exceeds
-       * three tiles in any of them. */
-      const plank = ['##FF#FFF##FF#F',
-                     '#FF##FFF#F##FF',
-                     '##F#FF#FF##F#F'][w.variant];
-      for (let i = 0; i < plank.length; i++) w.set(9 + i, 14, plank[i]);
+      /* The bridge is rebuilt from scratch every leg, so crossing it once
+       * buys you nothing. '#' is real, 'F' is a painting of one.
+       *
+       * Both ends of every pattern are real, and that is a hard requirement
+       * rather than taste: the legs alternate direction, so the last plank is
+       * the first thing you land on coming back. A phantom there is not a
+       * trap, it is a guaranteed death with no read available. No gap exceeds
+       * two planks either -- the bot proved three-wide gaps are only cleared
+       * by luck once you are landing on single tiles -- and no pattern uses a
+       * single repeated spacing, so there is no rhythm to fall into. */
+      w.v = [
+        ['#F##F##FF##F##', '#F##F##FF#F#F#', '#FF#F#F##F#FF#'],
+        ['##FF####F#FF##', '#FF#FF#F###F##', '#FF###F#F##FF#'],
+        ['#F###FF###FF##', '#F##FF##FF#F##', '#FF#F##F#F####'],
+        ['##FF#FF#####F#', '#FF##F#F####F#', '#FF##F##FF#FF#']
+      ][w.variant];
+
+      const lay = (n) => (wl) => {
+        wl.refill(9, 14, 14, 1, ' ');
+        const plank = wl.v[n];
+        for (let i = 0; i < plank.length; i++) wl.set(9 + i, 14, plank[i]);
+        wl.shakeIt(4);
+        Sfx.crumble();
+      };
+
+      journey(w, [
+        { col: 28, row: 15, arm: lay(0) },
+        { col: 3,  row: 15, say: 'we rebuilt it', arm: lay(1) },
+        { col: 27, row: 15, say: 'better this time', arm: lay(2) }
+      ]);
       w.msg('a perfectly normal bridge', 150);
-    }
+    },
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* ---------------------------------------------------------------- 7 */
@@ -396,7 +502,7 @@ const LEVELS = [
       place({ 2: 'P', 27: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
       w.hops = 0;
       // Four hops either way, but a different circuit each life, so the
@@ -405,7 +511,8 @@ const LEVELS = [
       w.spots = [
         [[15, 13], [8, 13], [22, 13], [30, 15]],
         [[22, 13], [15, 13], [8, 13], [30, 15]],
-        [[8, 13], [22, 13], [15, 13], [30, 15]]
+        [[8, 13], [22, 13], [15, 13], [30, 15]],
+        [[15, 13], [22, 13], [8, 13], [30, 15]]
       ][w.variant];
       w.lastSpike = 27;
     },
@@ -438,24 +545,39 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // Same three crushers, different columns and different phase offsets,
-      // so the gaps in the rhythm move. The charger's trigger column stays
-      // put at 26: its whole design depends on the run-off from crusher 3.
-      const v = [
-        [[9, 160, 0],  [17, 160, 80], [24, 140, 40]],
-        [[8, 150, 60], [16, 170, 10], [23, 130, 90]],
-        [[10, 140, 30], [18, 150, 100], [25, 160, 20]]
+      /* Three crossings under three crushers, and the crushers are rebuilt
+       * between legs with new columns and new phase offsets -- so the gaps in
+       * the rhythm are somewhere else every time you set off. The charger at
+       * the end of the first leg is unchanged and still fires from column 26:
+       * its whole design depends on the run-off from the last crusher. */
+      w.v = [
+        [[[9, 160, 0], [17, 160, 80], [24, 140, 40]], [[11, 150, 50], [18, 170, 20], [25, 130, 100]], [[8, 140, 90], [16, 150, 30], [23, 160, 60]]],
+        [[[8, 150, 60], [16, 170, 10], [23, 130, 90]], [[10, 140, 20], [18, 160, 70], [25, 150, 110]], [[9, 170, 40], [17, 130, 0], [24, 150, 80]]],
+        [[[10, 140, 30], [18, 150, 100], [25, 160, 20]], [[9, 160, 80], [16, 140, 40], [23, 170, 10]], [[11, 150, 60], [19, 160, 30], [26, 140, 90]]],
+        [[[9, 130, 70], [18, 160, 40], [24, 150, 10]], [[8, 170, 30], [17, 140, 90], [25, 160, 50]], [[10, 150, 100], [16, 170, 60], [23, 130, 20]]]
       ][w.variant];
-      v.forEach((c) => crusher(w, c[0], 3, 224, c[1], c[2]));
+
+      const arm = (n) => (wl) => {
+        wl.movers = wl.movers.filter((m) => m.style !== 'crusher');
+        wl.v[n].forEach((c) => crusher(wl, c[0], 3, 224, c[1], c[2]));
+        wl.shakeIt(5);
+      };
+
+      journey(w, [
+        { col: 29, row: 15, arm: arm(0), delay: 2 },
+        { col: 2,  row: 15, say: 'back under them', arm: arm(1) },
+        { col: 28, row: 15, say: 'timing is still everything', arm: arm(2) }
+      ]);
       w.msg('timing is everything', 140);
     },
+    onFakeDoor(w) { nextLeg(w); },
     triggers: [
       {
-        // Three tiles short of the door, with the level apparently beaten.
-        // The charger enters behind the door and sweeps back across it, so
-        // the last stretch has to be jumped rather than walked.
+        // Three tiles short of the first door, with the level apparently
+        // beaten. The charger enters behind the door and sweeps back across
+        // it, so the last stretch has to be jumped rather than walked.
         x: 26, y: 10, w: 1, h: 8,
         run(w) { rammer(w, 15); w.msg('not so fast'); }
       }
@@ -464,13 +586,13 @@ const LEVELS = [
 
   /* ---------------------------------------------------------------- 9 *
    * The darkness is a ~3 tile bubble around the player, not a blackout, so
-   * anything altered further out than that is invisible until you are nearly
-   * on top of it. Every hazard here is built at that range while you are
-   * blind, four times over: the level you memorised on the last attempt is
-   * never the level you are walking through now.
+   * anything further out than that is invisible until you are nearly on top
+   * of it. The whole level is built at that range, three times over, and the
+   * lights never come back on: each leg is a different room assembled around
+   * someone who cannot see it.
    *
-   * Nothing is placed in the map itself. A static spike you can learn once
-   * is exactly the problem this level used to have. */
+   * Nothing is placed in the map. A static hazard you can learn once is
+   * exactly the problem this level used to have. */
   {
     name: 'LIGHTS OUT',
     map: [
@@ -478,74 +600,50 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // The trigger columns stay put; what they build does not. Each life
-      // the four changes land on different tiles, so the level you learned
-      // last attempt is not the one being assembled around you now.
+      /* Three hazards a leg -- pit, spikes, pit -- spaced six apart from a
+       * base column, so every landing zone is four tiles wide. Everything
+       * stays inside 8-24: a leg starts pinned to whichever edge the last
+       * door was on, and a pit three tiles from a blind standing start is not
+       * a hazard, it is a coin flip.
+       *
+       * It was four hazards spaced four or five, which leaves two-tile
+       * landings. Sighted, that is tight. Blind, with a leg's worth of them
+       * in a row, no strategy survived at any reaction time at all -- so the
+       * spacing is what makes this readable rather than the hazard count. */
       w.v = [
-        { pit: 12, spk: 17, wall: 21, pit2: 24, lip: 26 },
-        { pit: 11, spk: 16, wall: 20, pit2: 25, lip: 27 },
-        // pit2 must clear the wall's spike (at wall+1) by at least one tile,
-        // or there is nowhere to land between them and the jump is impossible
-        { pit: 13, spk: 18, wall: 22, pit2: 25, lip: 27 }
-      ][w.variant];
-      w.msg('nice and bright in here', 120);
+        [8, 11, 9],
+        [10, 11, 9],
+        [9, 11, 8],
+        [11, 9, 10]
+      ][w.variant].map((a) => ({ pit: a, spk: a + 6, pit2: a + 12 }));
+
+      const arm = (n) => (wl) => {
+        const L = wl.v[n];
+        wl.refill(1, 15, 30, 1, ' ');
+        wl.refill(1, 16, 30, 2, '#');
+        wl.setDark(true);
+        /* No wall: blind, it is the one hazard you cannot answer. A pit or a
+         * spike is cleared by the same jump either way, but a wall has to be
+         * landed *on*, and judging a landing you cannot see -- three legs
+         * running -- defeated every strategy dark.js could construct. */
+        wl.crumbleNow(L.pit, 16, 2, 2);
+        wl.spikes(L.spk, 15, 2, '^');
+        wl.crumbleNow(L.pit2, 16, 2, 2);
+        // A flash part-way through the leg, showing you a room that has
+        // already finished changing.
+        wl.after(70, (w2) => { w2.dark = 0.1; Sfx.teleport(); w2.msg('there you are'); });
+      };
+
+      journey(w, [
+        { col: 29, row: 15, arm: arm(0), delay: 30 },
+        { col: 2,  row: 15, say: 'oops', arm: arm(1) },
+        { col: 28, row: 15, say: 'again', arm: arm(2) }
+      ]);
+      w.msg('nice and bright in here', 100);
     },
-    triggers: [
-      {
-        x: 6, y: 10, w: 1, h: 8,
-        run(w) { w.setDark(true); w.msg('oops'); Sfx.trap(); }
-      },
-
-      // 1. the floor ahead stops existing. Deliberately the gentlest of the
-      // four -- two tiles, opened four ahead so it reaches the edge of the
-      // light bubble with a moment to spare. An opener that kills everyone
-      // means nobody ever meets changes 3 and 4.
-      {
-        x: 8, y: 10, w: 1, h: 8,
-        run(w) { w.crumbleNow(w.v.pit, 16, 2, 2); w.shakeIt(6); }
-      },
-
-      // 2. spikes on the landing side, armed once you are already committed
-      // to the jump and can no longer choose otherwise
-      {
-        x: 13, y: 10, w: 1, h: 8,
-        run(w) { w.after(10, (wl) => wl.spikes(wl.v.spk, 15, 2, '^')); }
-      },
-
-      // 3. a wall in the dark with a spike tucked in behind it, so clearing
-      // the wall is not enough -- the hop has to carry past both. The flash
-      // shows you the shape far too late to re-plan. Setting dark directly
-      // rather than via setDark leaves darkTarget at 1, so the light dies
-      // again on its own over the next ~20 frames.
-      {
-        x: 17, y: 10, w: 1, h: 8,
-        run(w) {
-          w.wall(w.v.wall, 14, 1, 2);
-          w.spikes(w.v.wall + 1, 15, 1, '^');
-          w.dark = 0.1;
-          Sfx.teleport();
-        }
-      },
-
-      // 4. the floor goes one last time, and then the landing goes too. The
-      // delay is the point: the far lip looks safe at the moment you commit
-      // to the jump, and stops being safe while you are in the air.
-      {
-        x: 21, y: 10, w: 1, h: 8,
-        run(w) {
-          w.crumbleNow(w.v.pit2, 16, 2, 2);
-          w.shakeIt(5);
-          w.after(22, (wl) => { wl.crumbleNow(wl.v.lip, 16, 1, 2); wl.shakeIt(4); });
-        }
-      },
-
-      {
-        x: 27, y: 10, w: 1, h: 8,
-        run(w) { w.setDark(false); w.msg('welcome back'); Sfx.teleport(); }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* --------------------------------------------------------------- 10 */
@@ -553,7 +651,7 @@ const LEVELS = [
     name: 'UPSIDE DOWN',
     map: [
       FULL, FULL,
-      EMPTY,                 // the ceiling run is laid down per variant
+      EMPTY,                 // the ceiling run is laid down per leg
       place({ 28: 'D' }),
       ...Array(5).fill(EMPTY),
       place({ 8: rep('#', 5) }),
@@ -561,21 +659,43 @@ const LEVELS = [
       place({ 2: 'P' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // The ceiling is the floor once you flip, so these are the obstacles
-      // on the walk that matters. Positions and the stutter column both move.
+      /* Once you are on the ceiling you stay there, and the ceiling is the
+       * level: three crossings of it, each with its own spikes and its own
+       * moment where gravity lets go. Spikes live between columns 8 and 22,
+       * because each leg starts jammed against whichever end the last door
+       * was on. */
+      /* Leg 0 is not a full crossing: you walk the floor to column 15, the
+       * world turns over, and only then do you join the ceiling. Its hazards
+       * therefore live in 18-25, because anything left of 15 is behind you
+       * before you ever get up there. Legs 1 and 2 are proper ceiling
+       * crossings and use 9-23. */
       w.v = [
-        { spikes: [[12, 2], [20, 2], [25, 1]], stutter: 22 },
-        { spikes: [[11, 2], [17, 1], [23, 2]], stutter: 19 },
-        { spikes: [[13, 1], [18, 2], [24, 2]], stutter: 26 }
+        [{ spikes: [[18, 2], [23, 2]], stutter: 21 }, { spikes: [[10, 2], [17, 2]], stutter: 14 }, { spikes: [[12, 2], [19, 2]], stutter: 16 }],
+        [{ spikes: [[19, 2], [24, 2]], stutter: 22 }, { spikes: [[12, 2], [19, 2]], stutter: 16 }, { spikes: [[9, 2], [16, 2]], stutter: 13 }],
+        [{ spikes: [[18, 2], [24, 2]], stutter: 22 }, { spikes: [[9, 2], [16, 2]], stutter: 13 }, { spikes: [[11, 2], [18, 2]], stutter: 15 }],
+        [{ spikes: [[19, 2], [23, 2]], stutter: 21 }, { spikes: [[11, 2], [18, 2]], stutter: 15 }, { spikes: [[10, 2], [17, 2]], stutter: 14 }]
       ][w.variant];
-      w.v.spikes.forEach((s) => {
-        for (let i = 0; i < s[1]; i++) w.set(s[0] + i, 2, 'v');
-      });
-      w.stuttered = false;
+
+      const arm = (n) => (wl) => {
+        wl.refill(1, 2, 30, 1, ' ');
+        wl.leg = wl.v[n];
+        wl.stuttered = false;
+        wl.leg.spikes.forEach((sp) => {
+          for (let i = 0; i < sp[1]; i++) wl.set(sp[0] + i, 2, 'v');
+        });
+        wl.shakeIt(5);
+      };
+
+      journey(w, [
+        { col: 28, row: 3, arm: arm(0), delay: 2 },
+        { col: 3,  row: 3, say: 'back along the ceiling', arm: arm(1) },
+        { col: 27, row: 3, say: 'one more',               arm: arm(2) }
+      ]);
       w.msg('the door is up there. sorry.', 150);
     },
+    onFakeDoor(w) { nextLeg(w); },
     triggers: [
       {
         x: 15, y: 10, w: 2, h: 8,
@@ -587,16 +707,17 @@ const LEVELS = [
           w.msg('down is a social construct');
           Sfx.trap();
         }
-      },
+      }
     ],
     /* A stutter, not a reversal: gravity drops you for a moment and then
      * takes it back. Long enough to fall five tiles and lose the rhythm,
      * short enough that the ceiling catches you again on the way back.
-     * Done here rather than as a trigger because the column moves per
-     * variant, and a trigger's zone is fixed at load. */
+     * Driven from update() because the column moves per leg and per variant,
+     * and a trigger's zone is fixed when the level loads. */
     update(w) {
-      if (w.stuttered || w.gravDir !== -1) return;
-      if ((w.player.x + w.player.w / 2) / TILE < w.v.stutter) return;
+      if (!w.leg || w.stuttered || w.gravDir !== -1) return;
+      const c = (w.player.x + w.player.w / 2) / TILE;
+      if (Math.abs(c - w.leg.stutter) > 0.6) return;
       w.stuttered = true;
       w.setGravity(1);
       w.player.vy = 0;
@@ -622,32 +743,40 @@ const LEVELS = [
       place({ 2: 'P', 30: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      /* Which tiles survive, re-rolled every life. The surviving tiles used
-       * to come in pairs at a fixed spacing, so one crossing taught you the
-       * whole rhythm; now the runs and gaps are uneven AND they move. Each
-       * string covers columns 13-28, '.' meaning the floor goes. */
-      w.plan = ['##.#..#.##..#..#',
-                '#..##.#..#.##..#',
-                '##..#.##..#..##.'][w.variant];
+      /* Which parts of the floor survive, relaid on every leg. '#' means the
+       * tile stays but is turned invisible -- solid, undrawn, indistinguishable
+       * from the hole beside it -- and '.' means it actually goes. Covers
+       * columns 13-28; the ends stay real so each leg has somewhere to stand,
+       * and no run of holes exceeds two. */
+      w.v = [
+        ['##.#..#..#.##.##', '####.#.##..#.#.#', '#.##.###.##.#..#'],
+        ['####.##..#.##.##', '#..#####..##.###', '#.#.#..#.##.#..#'],
+        ['#..#.#.#.#.##.##', '####..##.###..##', '#.#.##.##..#####'],
+        ['####.#..#.###.##', '###.#..###.###.#', '###..#.#####.#.#']
+      ][w.variant];
+
+      const lay = (n) => (wl) => {
+        wl.refill(13, 16, 16, 2, '#');
+        const plan = wl.v[n];
+        for (let i = 0; i < plan.length; i++) {
+          const c = 13 + i;
+          if (plan[i] === '#') { wl.set(c, 16, 'I'); wl.set(c, 17, ' '); }
+          else wl.crumbleNow(c, 16, 1, 2);
+        }
+        wl.shakeIt(10);
+        Sfx.slam();
+      };
+
+      journey(w, [
+        { col: 30, row: 15, arm: lay(0), delay: 2 },
+        { col: 2,  row: 15, say: 'some of it is still there', arm: lay(1) },
+        { col: 29, row: 15, say: 'less of it now',            arm: lay(2) }
+      ]);
       w.msg('nothing suspicious here', 130);
     },
-    triggers: [
-      {
-        x: 9, y: 10, w: 3, h: 8,
-        run(w) {
-          for (let c = 13; c <= 28; c++) {
-            const safe = w.plan[c - 13] === '#';
-            if (safe) { w.set(c, 16, 'I'); w.set(c, 17, ' '); }
-            else w.crumbleNow(c, 16, 1, 2);
-          }
-          w.shakeIt(10);
-          w.msg('some of it is still there');
-          Sfx.slam();
-        }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* --------------------------------------------------------------- 12 */
@@ -658,30 +787,58 @@ const LEVELS = [
       place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // Four flips either way, but the columns move, and so do the spikes
-      // they are timed against -- so you cannot learn "flip, jump, flip".
+      /* Three legs, and each one re-picks both where the controls invert and
+       * where the spikes are. The flips are placed to land while you are
+       * mid-approach to a spike group rather than standing still, so the
+       * inversion costs you a jump rather than just a moment of confusion.
+       * Spikes stay between 8 and 21 -- a leg begins at the far edge, and a
+       * spike three tiles from a standing start is unanswerable. */
       w.v = [
-        { flips: [10, 16, 21, 26], spikes: [14, 18, 23] },
-        { flips: [8, 14, 19, 25],  spikes: [12, 17, 22] },
-        { flips: [11, 15, 22, 27], spikes: [13, 20, 24] }
+        [{ flips: [9, 15, 20], spikes: [12, 18] },
+         { flips: [21, 14, 10], spikes: [16, 9] },
+         { flips: [8, 16, 22], spikes: [11, 19] }],
+        [{ flips: [11, 17, 22], spikes: [14, 20] },
+         { flips: [19, 13, 8], spikes: [16, 10] },
+         { flips: [10, 15, 21], spikes: [13, 18] }],
+        [{ flips: [8, 14, 19], spikes: [11, 17] },
+         { flips: [22, 16, 11], spikes: [19, 13] },
+         { flips: [12, 18, 23], spikes: [15, 21] }],
+        [{ flips: [10, 16, 21], spikes: [13, 19] },
+         { flips: [20, 15, 9], spikes: [17, 11] },
+         { flips: [9, 14, 20], spikes: [12, 17] }]
       ][w.variant];
-      w.v.spikes.forEach((c) => w.set(c, 15, '^'));
+
+      const arm = (n) => (wl) => {
+        wl.refill(1, 15, 30, 1, ' ');
+        wl.leg = wl.v[n];
+        wl.flipped = 0;
+        wl.setMirror(false);
+        wl.leg.spikes.forEach((c) => wl.spikes(c, 15, 2, '^'));
+        wl.shakeIt(5);
+      };
+
+      journey(w, [
+        { col: 29, row: 15, arm: arm(0) },
+        { col: 2,  row: 15, say: 'back through it', arm: arm(1) },
+        { col: 28, row: 15, say: 'once more',       arm: arm(2) }
+      ]);
       w.msg('watch your step', 120);
     },
+    onFakeDoor(w) { nextLeg(w); },
     update(w) {
-      // Flips are driven from here because their columns move per variant,
-      // and a trigger's zone is fixed when the level loads.
-      if (w.flipped === undefined) w.flipped = 0;
-      if (w.flipped >= w.v.flips.length) return;
+      // Flip columns move per leg, so this cannot be a fixed trigger zone.
+      if (!w.leg || w.flipped >= w.leg.flips.length) return;
       const c = (w.player.x + w.player.w / 2) / TILE;
-      if (c < w.v.flips[w.flipped]) return;
+      const target = w.leg.flips[w.flipped];
+      // legs alternate direction, so approach from either side counts
+      if (Math.abs(c - target) > 0.6) return;
       const on = w.flipped % 2 === 0;
       w.flipped++;
       w.setMirror(on);
       w.shakeIt(on ? 8 : 6);
-      w.msg(['left is right now', 'or is it', 'again', 'never mind'][w.flipped - 1]);
+      w.msg(on ? 'left is right now' : 'never mind');
       Sfx.trap();
     }
   },
@@ -692,32 +849,63 @@ const LEVELS = [
     map: [
       ...Array(14).fill(EMPTY),
       place({ 13: rep('#', 3) }),
-      place({ 1: 'P', 9: '^^', 24: '^', 30: 'D' }),
+      place({ 1: 'P', 30: 'D' }),
       place({ 0: rep('#', 18), 20: rep('#', 12) }),
       place({ 0: rep('#', 18), 20: rep('#', 12) })
     ],
-    variants: 3,
+    variants: 4,
     init(w) {
-      // The player runs at PHYS.maxRun (2.4), so the train's speed is really
-      // a budget for how much time you may spend on the obstacles in its way.
-      // At 1.25 there was enough slack to stop and think about each one.
+      /* A new train every leg, entering from behind whichever way you are
+       * now running, so turning round never buys you distance. Speed is the
+       * real difficulty dial: the player runs at PHYS.maxRun (2.4), so the
+       * train's speed decides how much of the crossing you may spend on the
+       * spikes rather than on running. */
+      /* Spikes stay clear of columns 18-19, which is the level's permanent
+       * gap. Put one next to it and the sequence becomes jump-spike, land on
+       * two tiles, jump-gap immediately -- three precise moves in a row with
+       * a train behind you, which is not tension, it is a dice roll.
+       *
+       * They also stay inside columns 11-26. Legs alternate direction, so
+       * each one begins jammed against an edge with a train already inbound;
+       * a spike two tiles from that standing start has to be jumped before
+       * the player has any speed to jump with. */
       w.v = [
-        { speed: 1.7, wall: 27 },
-        { speed: 1.6, wall: 24 },
-        { speed: 1.8, wall: 29 }
+        [{ speed: 1.5, spikes: [12, 24] }, { speed: 1.5, spikes: [25, 13] }],
+        [{ speed: 1.6, spikes: [13, 25] }, { speed: 1.4, spikes: [24, 11] }],
+        [{ speed: 1.4, spikes: [11, 23] }, { speed: 1.6, spikes: [26, 14] }],
+        [{ speed: 1.5, spikes: [13, 26] }, { speed: 1.5, spikes: [24, 11] }]
       ][w.variant];
-      w.mover({
-        x: -5 * TILE, y: 0, w: 5 * TILE, h: VH,
-        vx: w.v.speed, style: 'wall', solid: false, deadly: true
-      });
-      w.msg('RUN', 120);
+
+      const arm = (n, dir) => (wl) => {
+        wl.movers.length = 0;                    // last leg's train is done
+        wl.refill(1, 15, 30, 1, ' ');
+        const L = wl.v[n];
+        L.spikes.forEach((c) => wl.spikes(c, 15, 1, '^'));
+        /* Six tiles further out than the edge, deliberately. A leg starts
+         * with the player pressed against the wall the door was on, and a
+         * train spawned exactly at that edge arrives while they are still
+         * turning around -- about 14 frames, which is less than it takes to
+         * reverse direction at PHYS.accel. This gives roughly 70. */
+        wl.mover({
+          x: dir > 0 ? -11 * TILE : VW + 6 * TILE, y: 0,
+          w: 5 * TILE, h: VH,
+          vx: dir * L.speed,
+          style: 'wall', solid: false, deadly: true
+        });
+        wl.msg('RUN', 90);
+        Sfx.trap();
+      };
+
+      /* Two legs, not three. The train chases for the whole of a leg, so
+       * unlike the other levels there is no safe moment to recover a bad
+       * jump -- the failures compound instead of resetting, and a third
+       * crossing turned the level from demanding into a lottery. */
+      journey(w, [
+        { col: 30, row: 15, arm: arm(0, 1), delay: 2 },
+        { col: 2,  row: 15, say: 'RUN BACK', arm: arm(1, -1) }
+      ]);
     },
-    triggers: [
-      {
-        x: 21, y: 10, w: 2, h: 8,
-        run(w) { w.wall(w.v.wall, 14, 1, 2); w.msg('one more thing'); }
-      }
-    ]
+    onFakeDoor(w) { nextLeg(w); }
   },
 
   /* --------------------------------------------------------------- 14 */

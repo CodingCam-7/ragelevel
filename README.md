@@ -85,9 +85,38 @@ through the floor. But it is restored the instant you die. The cue is there to
 train your memory, not to accumulate into a map — play badly and the level
 never gets easier.
 
+## Length
+
+A single screen is 32 tiles, so a straight run is over in roughly 200 frames
+however many traps you pile onto it. More hazards make a level harder; they do
+not make it longer. The lever for length is making you cross the screen again.
+
+So most levels are **journeys**: a list of stops. Reaching the door at one stop
+does not finish the level — the door moves to the next stop and that leg's
+hazards arm behind it. Only the last stop is a real door. A three-leg level
+runs 600–1000 frames instead of 200, and every leg can be a different fight.
+
+```js
+journey(w, [
+  { col: 29, row: 15, arm: layout(0) },
+  { col: 2,  row: 15, say: 'back you go', arm: layout(1) },
+  { col: 28, row: 15, say: 'and again',   arm: layout(2) }
+]);
+```
+
+Two rules fall out of legs alternating direction, and both were learned by
+watching levels turn out impossible rather than merely hard:
+
+- **Hazards belong in the middle of the screen.** A leg starts pinned against
+  whichever edge the last door was on, so a trap three tiles from that standing
+  start has to be answered before you have any speed to answer it with.
+- **Nothing may be direction-dependent.** A spike tucked behind a wall works
+  when the wall is always met from one side; met from the other you land into
+  the wall with nowhere to go.
+
 ## Variants
 
-Every level exists in three hand-authored versions, and **the game re-rolls
+Every level exists in three or four hand-authored versions, and **the game re-rolls
 which one you get every time you die.** Positions move, widths change, timings
 shift. Clearing a level once tells you how it works; it does not tell you where
 anything will be next time.
@@ -136,6 +165,7 @@ tools/
   solver.js   greedy bot, proves levels 1-13 completable
   finale.js   route-following bot for level 14
   dark.js     level 9 played with vision limited to the light radius
+  trace.js    narrate one level leg by leg (jsc trace.js -- <level> [variant])
   crusher.js  crusher timing
 ```
 

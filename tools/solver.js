@@ -30,6 +30,34 @@ Math.random = rand;
 
 function solidAhead(w, c, r) { return isSolidChar(w.at(c, r)); }
 
+/**
+ * Is a killing mover sitting in this tile? The hazard scan used to read only
+ * the tile grid, so level 8's charger and level 13's train were invisible to
+ * it -- the bot survived them by taking a random jump at the right instant,
+ * which works once and collapses to nothing across a multi-leg level. A
+ * player can plainly see both, so the bot should too.
+ */
+function deadlyMoverAt(w, c, r) {
+  var x = c * TILE, y = r * TILE;
+  for (var i = 0; i < w.movers.length; i++) {
+    var m = w.movers[i];
+    if (!m.deadly || m.dead) continue;
+    // Sweep the mover forward, not just where it is now. Level 8's charger
+    // travels ten pixels a frame; noticing it two tiles away leaves three
+    // frames to act, so a bot checking only the present position is reacting
+    // to something already on top of it. Projecting a third of a second
+    // ahead is what a player watching it come does.
+    var lead = Math.abs(m.vx || 0) * 20;
+    var mx = (m.vx || 0) < 0 ? m.x - lead : m.x;
+    var mw = m.w + lead;
+    var ly = Math.abs(m.vy || 0) * 8;
+    var my = (m.vy || 0) < 0 ? m.y - ly : m.y;
+    var mh = m.h + ly;
+    if (aabb(x, y, TILE, TILE, mx, my, mw, mh)) return true;
+  }
+  return false;
+}
+
 function attempt(levelIndex, eps, maxFrames) {
   Game.levelDeaths = 0;
   var w = new World(LEVELS[levelIndex], Game);
@@ -65,7 +93,7 @@ function attempt(levelIndex, eps, maxFrames) {
     for (var d = 1; d <= LOOKAHEAD; d++) {
       var c = pc + d * dir;
       var bad = isSpikeChar(w.at(c, pr)) || isSpikeChar(w.at(c, footR)) ||
-                !solidAhead(w, c, footR);
+                !solidAhead(w, c, footR) || deadlyMoverAt(w, c, pr);
       if (bad) {
         if (hazardAt === 0) hazardAt = d;
         hazardWidth++;
@@ -75,8 +103,13 @@ function attempt(levelIndex, eps, maxFrames) {
     }
     var hazardNear = hazardAt !== 0 && hazardAt <= 2;
 
+    // The random component is kept small deliberately. It exists to explore
+    // timings, but a jump taken for no reason is itself fatal on levels where
+    // restraint is the puzzle -- level 5 drops a spike bar on anyone who
+    // jumps over the invisible stretch. At full eps the bot jumped so often
+    // it could never demonstrate the intended solution.
     var wantJump = p.onGround &&
-      (aheadBlocked || hazardNear || doorAbove || rand() < eps);
+      (aheadBlocked || hazardNear || doorAbove || rand() < eps * 0.15);
 
     Input.down = Object.create(null);
     Input.hit = Object.create(null);
@@ -137,7 +170,7 @@ LEVELS.forEach(function (lv, i) {
     var wins = 0, bestFrames = 1e9, furthest = 0;
     for (var a = 0; a < ATTEMPTS; a++) {
       var eps = 0.02 + (a % 20) * 0.03;
-      var r = attempt(i, eps, 1400);
+      var r = attempt(i, eps, 3000);
       if (r.won) { wins++; if (r.frames < bestFrames) bestFrames = r.frames; }
       else if (r.at > furthest) furthest = r.at;
       if (wins >= 15) break;
