@@ -23,11 +23,35 @@ python3 -m http.server 8000    # then visit http://localhost:8000
 | `←` `→` or `A` `D` | Move |
 | `Space`, `W`, `↑` | Jump (hold for height) |
 | `R` | Restart the level |
+| `Esc` | Pause / back |
 | `M` | Mute |
 
 Movement has coyote time, a jump buffer, and variable jump height, so the
 platforming itself is tight. Every death is the level's fault, not the
 controls'.
+
+In menus, `↑` `↓` move, `←` `→` change a setting, `Space` selects and `Esc`
+goes back. `Esc` mid-level opens a pause menu with **Resume**, **Settings**
+and **Quit to menu**; **Settings** holds master volume and a screen-shake
+toggle, and is reachable from the title screen too. Both persist with your
+save.
+
+## Wiping the death count
+
+The title screen tracks lifetime deaths and will not let you forget them. The
+one way to clear the number is **three complete playthroughs back to back** —
+level 1 to level 14, three times, with nothing in between.
+
+"In a row" is enforced strictly, because a soft version of it would be no
+achievement at all:
+
+- Quitting to the menu mid-run breaks the chain.
+- Starting anywhere but level 1 breaks it, since the level select would
+  otherwise reduce the whole thing to picking level 14 three times.
+- Deaths themselves are fine. The run has to be *finished*, not clean — this
+  is a game about dying.
+
+Using the wipe spends it, so the counter starts again from zero runs.
 
 ## The levels
 

@@ -4,6 +4,7 @@
 
 const Sfx = {
   ctx: null,
+  master: null,
   muted: false,
 
   unlock() {
@@ -11,8 +12,25 @@ const Sfx = {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       try { this.ctx = new AC(); } catch (e) { return; }
+      // Everything routes through one gain node so the volume setting is a
+      // single value to change, rather than a multiplier threaded through
+      // every call site.
+      this.master = this.ctx.createGain();
+      this.master.gain.value = Options.volume;
+      this.master.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+
+  /** Where every voice connects. Falls back to the raw output pre-unlock. */
+  out() {
+    return this.master || (this.ctx && this.ctx.destination);
+  },
+
+  setVolume(v) {
+    Options.volume = clamp(v, 0, 1);
+    if (this.master) this.master.gain.value = Options.volume;
+    return Options.volume;
   },
 
   toggleMute() {
@@ -42,7 +60,7 @@ const Sfx = {
     gain.gain.exponentialRampToValueAtTime(vol || 0.05, t + 0.008);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
 
-    osc.connect(gain).connect(c.destination);
+    osc.connect(gain).connect(this.out());
     osc.start(t);
     osc.stop(t + dur + 0.02);
   },
@@ -61,7 +79,7 @@ const Sfx = {
     const gain = c.createGain();
     src.buffer = buf;
     gain.gain.value = vol || 0.06;
-    src.connect(gain).connect(c.destination);
+    src.connect(gain).connect(this.out());
     src.start(t);
   },
 
@@ -84,7 +102,7 @@ const Sfx = {
     lp.frequency.setValueAtTime(cutoff || 200, t);
     gain.gain.value = vol || 0.09;
     src.buffer = buf;
-    src.connect(lp).connect(gain).connect(c.destination);
+    src.connect(lp).connect(gain).connect(this.out());
     src.start(t);
   },
 

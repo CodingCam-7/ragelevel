@@ -254,6 +254,78 @@ LEVELS.forEach(function (lv, i) {
     (blind.end === 'dead' && reactS <= 0.20 && widthFrames >= 8 ? 'ok' : 'FAILED'));
 })();
 
+// --- the death-count wipe must stay expensive ------------------------------
+// All of this is bookkeeping with no visible symptom when it breaks: a streak
+// that fails to reset just quietly hands out the reward, and one that resets
+// too eagerly makes it unreachable. Neither shows up on screen.
+(function () {
+  function finishRun(from) {
+    Game.begin(from);
+    for (var i = from; i < LEVELS.length; i++) {
+      Game.levelIndex = i; Game.onWin(); Game.clearT = 1; Game.update();
+    }
+  }
+  function fresh() {
+    Game.streak = 0; Game.deaths = 0; Game.unlocked = LEVELS.length - 1;
+    Game.state = 'title'; Game.menuIndex = 0;
+  }
+  var before = problems;   // only this block's own failures, not earlier ones
+  function check(cond, msg) { if (!cond) { console.error('wipe rules: ' + msg); problems++; } }
+
+  fresh();
+  finishRun(0); finishRun(0);
+  check(Game.streak === 2, 'two full runs should give streak 2, got ' + Game.streak);
+
+  Game.begin(0); Game.quitToMenu();
+  check(Game.streak === 0, 'quitting mid-run must break the streak, got ' + Game.streak);
+
+  fresh();
+  finishRun(0); finishRun(0);
+  Game.begin(5);
+  check(Game.streak === 0, 'starting past level 1 must break the streak, got ' + Game.streak);
+
+  fresh();
+  for (var r = 0; r < FULL_RUNS_TO_RESET; r++) finishRun(0);
+  check(Game.streak === FULL_RUNS_TO_RESET,
+    FULL_RUNS_TO_RESET + ' full runs should arm the wipe, got ' + Game.streak);
+
+  // armed but gated correctly
+  Game.deaths = 0;
+  Game.wipeDeaths();
+  check(Game.streak === FULL_RUNS_TO_RESET, 'wiping zero deaths must not spend the streak');
+
+  Game.deaths = 417;
+  Game.wipeDeaths();
+  check(Game.deaths === 0, 'wipe should clear deaths, got ' + Game.deaths);
+  check(Game.streak === 0, 'wipe must spend the streak, got ' + Game.streak);
+
+  // and refuse when short
+  Game.deaths = 50; Game.streak = FULL_RUNS_TO_RESET - 1;
+  Game.wipeDeaths();
+  check(Game.deaths === 50, 'wipe fired below the required streak');
+
+  // settings clamp and actually take effect
+  var s = Game.settingsMenu();
+  for (var a = 0; a < 30; a++) s[0].adjust(-1);
+  check(Options.volume === 0, 'volume should floor at 0, got ' + Options.volume);
+  for (var b = 0; b < 40; b++) s[0].adjust(1);
+  check(Options.volume === 1, 'volume should ceiling at 1, got ' + Options.volume);
+
+  var wasShake = Options.shake;
+  Options.shake = false;
+  var tw = new World(LEVELS[0], Game);
+  tw.shakeIt(9);
+  check(tw.shake === 0, 'shake disabled but world.shake became ' + tw.shake);
+  Options.shake = true;
+  tw.shakeIt(9);
+  check(tw.shake === 9, 'shake enabled but world.shake stayed ' + tw.shake);
+  Options.shake = wasShake;
+
+  console.log('wipe needs ' + FULL_RUNS_TO_RESET + ' clean full runs, settings clamp and apply -> ' +
+    (problems === before ? 'ok' : 'FAILED'));
+  fresh();
+})();
+
 // --- dynamic bot run ------------------------------------------------------
 // Crude bot: hold right, jump when blocked or when a gap/spike is ahead.
 // The point is to exercise triggers, movers and collision, not to actually win.

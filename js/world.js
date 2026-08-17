@@ -171,7 +171,10 @@ class World {
     return m;
   }
 
-  shakeIt(n) { this.shake = Math.max(this.shake, n); }
+  /* Gated here rather than in the renderer so that turning shake off removes
+   * it everywhere at once -- crushers, walls, deaths, the charger -- without
+   * every caller having to remember to ask. */
+  shakeIt(n) { if (Options.shake) this.shake = Math.max(this.shake, n); }
 
   msg(text, frames) {
     this.message = { text, life: frames || 110 };

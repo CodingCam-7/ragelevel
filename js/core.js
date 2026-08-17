@@ -33,6 +33,15 @@ const PHYS = {
 // "that block fell", short enough that it is gone before you respawn.
 const PHANTOM_FALL_LIFE = 34;
 
+/* Player-facing options, persisted with the save. Kept here rather than on
+ * Game so world.js and render.js can consult them without reaching upward. */
+const Options = {
+  volume: 1,        // 0..1, master gain
+  shake: true       // screen shake on impacts
+};
+
+const VOLUME_STEP = 0.1;
+
 const PAL = {
   bg:        '#12121c',
   grid:      '#1d1d2e',
@@ -121,34 +130,51 @@ const Input = {
   hit: Object.create(null),        // edge-triggered, cleared each sim step
   anyKeyThisFrame: false,
 
+  /* One key can drive several actions. The menus need up/down navigation and
+   * the game needs the same keys to jump, so ArrowUp is both 'jump' and 'up';
+   * nothing reads both in the same state, so they never collide. Menus select
+   * with 'confirm' rather than 'jump' precisely so that navigating up does not
+   * also pick the item you just left. */
   map: {
-    ArrowLeft: 'left', KeyA: 'left',
-    ArrowRight: 'right', KeyD: 'right',
-    ArrowUp: 'jump', KeyW: 'jump', Space: 'jump',
-    KeyR: 'restart', KeyM: 'mute', Escape: 'pause', Enter: 'jump'
+    ArrowLeft: ['left'], KeyA: ['left'],
+    ArrowRight: ['right'], KeyD: ['right'],
+    ArrowUp: ['jump', 'up'], KeyW: ['jump', 'up'],
+    ArrowDown: ['down'], KeyS: ['down'],
+    Space: ['jump', 'confirm'], Enter: ['jump', 'confirm'],
+    KeyR: ['restart'], KeyM: ['mute'], Escape: ['pause']
   },
 
   init() {
     addEventListener('keydown', (e) => {
-      const a = this.map[e.code];
-      if (a) {
+      const acts = this.actionsFor(e.code);
+      if (acts) {
         e.preventDefault();
-        if (!this.down[a]) this.hit[a] = true;
-        this.down[a] = true;
+        for (const a of acts) {
+          if (!this.down[a]) this.hit[a] = true;
+          this.down[a] = true;
+        }
       }
       this.anyKeyThisFrame = true;
       Sfx.unlock();
     });
     addEventListener('keyup', (e) => {
-      const a = this.map[e.code];
-      if (a) {
+      const acts = this.actionsFor(e.code);
+      if (acts) {
         e.preventDefault();
-        this.down[a] = false;
+        for (const a of acts) this.down[a] = false;
       }
     });
     addEventListener('blur', () => {
       this.down = Object.create(null);
     });
+  },
+
+  /* map is a plain object literal, so a stray e.code like 'constructor' would
+   * hand back something inherited and truthy. Only own array values count. */
+  actionsFor(code) {
+    if (!Object.prototype.hasOwnProperty.call(this.map, code)) return null;
+    const acts = this.map[code];
+    return Array.isArray(acts) ? acts : null;
   },
 
   // Mirrored levels swap left/right without the player's consent.
