@@ -113,7 +113,16 @@ function rammer(w, row) {
 
 const LEVELS = [
 
-  /* ---------------------------------------------------------------- 1 */
+  /* ---------------------------------------------------------------- 1 *
+   * The warm-up teaches one thing: this game wastes your time on purpose.
+   * The door is never where you are going, and the cost of chasing it is
+   * paid in walking rather than in deaths -- level 1 should be maddening,
+   * not punishing. The single spike pair and the final hop are the only
+   * things here that can actually kill you.
+   *
+   * Written as a phase machine in update() rather than triggers because the
+   * player crosses the same columns several times, and position triggers
+   * fire once on the way past regardless of which lap they are on. */
   {
     name: 'WARM UP',
     map: [
@@ -121,18 +130,45 @@ const LEVELS = [
       place({ 3: 'P', 20: 'D' }),
       FULL, FULL
     ],
-    init(w) { w.msg('walk right. touch door. easy.', 150); },
-    triggers: [
-      {
-        x: 14, y: 0, w: 4, h: ROWS,
-        run(w) {
-          w.doorBy(8, 0);
-          w.shakeIt(5);
-          w.msg('...the door is shy.');
-          Sfx.teleport();
-        }
+    init(w) {
+      w.phase = 0;
+      w.msg('walk right. touch door. easy.', 150);
+    },
+    update(w) {
+      const c = (w.player.x + w.player.w / 2) / TILE;
+
+      if (w.phase === 0 && c > 14) {
+        w.phase = 1;
+        w.doorTo(28, 15);
+        w.shakeIt(5);
+        w.msg('...the door is shy.');
+        Sfx.teleport();
+
+      } else if (w.phase === 1 && c > 25) {
+        // all the way back past your own spawn
+        w.phase = 2;
+        w.doorTo(4, 15);
+        w.shakeIt(6);
+        w.spikes(12, 15, 2, '^');       // and something to clear on the way
+        w.msg('oh. were you close?');
+        Sfx.teleport();
+
+      } else if (w.phase === 2 && c < 8) {
+        // and it leaves before you arrive, naturally
+        w.phase = 3;
+        w.doorTo(16, 15);
+        w.shakeIt(5);
+        w.msg('warmer.');
+        Sfx.teleport();
+
+      } else if (w.phase === 3 && c > 13) {
+        // one honest jump, once the walking has stopped being funny
+        w.phase = 4;
+        w.wall(16, 14, 1, 2);
+        w.doorTo(16, 13);
+        w.msg('fine. take it.');
       }
-    ]
+    }
   },
 
   /* ---------------------------------------------------------------- 2 */
@@ -146,12 +182,26 @@ const LEVELS = [
     ],
     init(w) { w.msg('the floor is only mostly real', 150); },
     triggers: [
+      // three separate holes now, and the brittle stretch between them is
+      // still counting down under your feet -- standing still to think about
+      // the next one is its own mistake
+      {
+        x: 10, y: 12, w: 2, h: 6,
+        run(w) { w.crumbleNow(14, 16, 2, 1); w.shakeIt(5); }
+      },
       {
         x: 17, y: 12, w: 3, h: 6,
         run(w) {
           w.crumbleNow(21, 16, 3, 1);
           w.shakeIt(6);
           w.msg('JUMP');
+        }
+      },
+      // and the solid-looking run-up to the door is not that either
+      {
+        x: 23, y: 12, w: 2, h: 6,
+        run(w) {
+          w.after(16, (wl) => { wl.crumbleNow(26, 16, 2, 1); wl.shakeIt(5); wl.msg('one more'); });
         }
       }
     ]
@@ -166,14 +216,30 @@ const LEVELS = [
       FULL, FULL
     ],
     triggers: [
-      { x: 6, y: 10, w: 3, h: 8, run(w) { w.spikes(10, 15, 2, '^'); } },
-      { x: 13, y: 10, w: 3, h: 8, run(w) { w.spikes(17, 15, 2, '^'); w.msg('again'); } },
+      { x: 5, y: 10, w: 2, h: 8, run(w) { w.spikes(9, 15, 3, '^'); } },
       {
-        x: 21, y: 10, w: 3, h: 8,
+        x: 12, y: 10, w: 2, h: 8,
         run(w) {
-          w.spikes(24, 15, 2, '^');
-          w.after(10, (wl) => { wl.spikes(19, 15, 2, '^'); wl.msg('no going back'); });
+          w.spikes(16, 15, 3, '^');
+          w.msg('again');
         }
+      },
+      {
+        x: 19, y: 10, w: 1, h: 8,
+        run(w) {
+          w.spikes(22, 15, 3, '^');
+          // far enough behind that it cuts off the retreat without spearing
+          // the player who just walked over the trigger
+          w.after(10, (wl) => { wl.spikes(17, 15, 2, '^'); wl.msg('no going back'); });
+        }
+      },
+      // A fourth wave by the door was tried and removed: with the third wave
+      // already filling 22-24, every placement for it left a one-tile strip
+      // to land on and take off from again, which is a precision demand this
+      // level does not otherwise make. Three waves of three is the hardening.
+      {
+        x: 26, y: 10, w: 1, h: 8,
+        run(w) { w.msg('of course you are not done'); }
       }
     ]
   },
@@ -229,7 +295,20 @@ const LEVELS = [
         w.msg('WHO SAID JUMP');
         Sfx.slam();
       }
-    }
+    },
+    triggers: [
+      // Having just been punished for jumping a gap, you are handed a gap
+      // that has to be jumped. The lesson this level teaches is only true
+      // once, which is the entire point of it.
+      {
+        x: 21, y: 10, w: 1, h: 8,
+        run(w) {
+          w.crumbleNow(24, 16, 2, 2);
+          w.shakeIt(6);
+          w.msg('this one is real');
+        }
+      }
+    ]
   },
 
   /* ---------------------------------------------------------------- 6 */
@@ -237,7 +316,11 @@ const LEVELS = [
     name: 'FAKE NEWS',
     map: [
       ...Array(14).fill(EMPTY),
-      place({ 9: '##FF##FF##FF##' }),
+      // The old bridge alternated ## FF ## FF, which you only had to read
+      // once: every gap was two wide and every landing was two wide. This
+      // one is irregular on both counts -- gaps of 2, 3, 2, and single-tile
+      // landings at 13 and 21 that have to be hit rather than fallen onto.
+      place({ 9: '##FF#FFF##FF#F' }),
       place({ 2: 'P', 28: 'D' }),
       place({ 0: rep('#', 8), 24: rep('#', 8) }),
       place({ 0: rep('#', 8), 24: rep('#', 8) })

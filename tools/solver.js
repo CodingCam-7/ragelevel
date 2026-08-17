@@ -47,17 +47,36 @@ function attempt(levelIndex, eps, maxFrames) {
     var dr = Math.floor((w.door.y + w.door.h / 2) / TILE);
 
     var dir = dc === pc ? flip : (dc > pc ? 1 : -1);
-    if (rand() < eps * 0.25) dir = -dir;
+    // A small chance of walking the wrong way models hesitation. It used to
+    // scale with eps up to ~15% per frame, which at the high end turned the
+    // bot into a random walk that could not finish anything demanding.
+    if (rand() < eps * 0.05) dir = -dir;
 
-    // look one and two tiles ahead at body height and at foot height
-    var aheadBlocked = solidAhead(w, pc + dir, pr) || solidAhead(w, pc + dir, pr + (g > 0 ? 0 : 0));
+    // Look several tiles ahead, and measure how wide the obstacle is, so the
+    // jump can be held in proportion. Looking only one or two tiles and then
+    // picking a hold length at random cannot clear a three-tile spike field
+    // except by luck -- which made levels a competent player handles easily
+    // read as NEVER SOLVED.
     var footR = g > 0 ? pr + 1 : pr - 1;
-    var gapAhead = !solidAhead(w, pc + dir, footR) || !solidAhead(w, pc + 2 * dir, footR);
-    var spikeAhead = isSpikeChar(w.at(pc + dir, pr)) || isSpikeChar(w.at(pc + 2 * dir, pr));
+    var aheadBlocked = solidAhead(w, pc + dir, pr);
     var doorAbove = g > 0 ? dr < pr - 1 : dr > pr + 1;
 
+    var hazardAt = 0, hazardWidth = 0;
+    for (var d = 1; d <= LOOKAHEAD; d++) {
+      var c = pc + d * dir;
+      var bad = isSpikeChar(w.at(c, pr)) || isSpikeChar(w.at(c, footR)) ||
+                !solidAhead(w, c, footR);
+      if (bad) {
+        if (hazardAt === 0) hazardAt = d;
+        hazardWidth++;
+      } else if (hazardAt !== 0) {
+        break;                      // measured the near edge; stop at the far one
+      }
+    }
+    var hazardNear = hazardAt !== 0 && hazardAt <= 2;
+
     var wantJump = p.onGround &&
-      (aheadBlocked || gapAhead || spikeAhead || doorAbove || rand() < eps);
+      (aheadBlocked || hazardNear || doorAbove || rand() < eps);
 
     Input.down = Object.create(null);
     Input.hit = Object.create(null);
@@ -74,7 +93,10 @@ function attempt(levelIndex, eps, maxFrames) {
 
     if (wantJump && jumpHold === 0) {
       Input.hit.jump = true;
-      jumpHold = 5 + Math.floor(rand() * 18);   // commit to a hold length
+      // Wider obstacle, longer hold. The jitter keeps attempts exploring
+      // timings rather than replaying one fixed arc.
+      var base = 6 + hazardWidth * 5;
+      jumpHold = Math.max(3, Math.min(24, base + Math.floor(rand() * 10) - 4));
     }
     if (jumpHold > 0) { Input.down.jump = true; jumpHold--; }
 
@@ -90,6 +112,7 @@ function attempt(levelIndex, eps, maxFrames) {
   return { won: false, timeout: true, at: Math.floor(w.player.x / TILE) };
 }
 
+var LOOKAHEAD = 4;   // tiles of warning the bot gets, roughly a jump-length
 var ATTEMPTS = 4000;
 
 // Level 14 is unsolvable *by this bot* on purpose: the greedy walker only ever

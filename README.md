@@ -59,12 +59,12 @@ Fourteen levels, each built around one betrayal:
 
 | # | Name | The joke |
 | --- | --- | --- |
-| 1 | Warm Up | The door slides away as you reach it |
-| 2 | Trust Issues | The floor crumbles under you, then jumps ahead of you |
-| 3 | Pointy | Spikes fire out of the ground, including behind you |
+| 1 | Warm Up | The door runs away three times, once to behind your own spawn |
+| 2 | Trust Issues | The brittle floor opens three times, the last one at the finish |
+| 3 | Pointy | Three waves of spikes fire out of the ground, including behind you |
 | 4 | The Shortcut | A solid-looking floor tile isn't; a wall rises on the way out |
-| 5 | Look Down | The "pit" is safe. Jumping over it is not |
-| 6 | Fake News | Half the bridge is a painting |
+| 5 | Look Down | The "pit" is safe. Jumping over it is not. The next gap is real |
+| 6 | Fake News | Half the bridge is a painting, and the halves are uneven |
 | 7 | Catch Me | The door refuses to be caught, three times |
 | 8 | Squish | Ceiling crushers on offset timers, then a charger guards the door |
 | 9 | Lights Out | The lights go out and the room rebuilds itself four times |
