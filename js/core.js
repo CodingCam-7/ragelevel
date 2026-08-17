@@ -29,6 +29,10 @@ const PHYS = {
   buffer:   7       // frames a jump press stays queued
 };
 
+// How long a phantom tile stays visible after it drops. Long enough to read as
+// "that block fell", short enough that it is gone before you respawn.
+const PHANTOM_FALL_LIFE = 34;
+
 const PAL = {
   bg:        '#12121c',
   grid:      '#1d1d2e',

@@ -84,6 +84,21 @@ const Render = {
     }
   },
 
+  /**
+   * Phantom tiles on their way out. Drawn with every edge open, because a
+   * detached block has no neighbours to seam against, and dimmed — it has
+   * already told its lie, so looking dead costs nothing.
+   */
+  fallingTiles(w) {
+    const ctx = this.ctx;
+    for (const f of w.falling) {
+      const k = f.life / PHANTOM_FALL_LIFE;
+      ctx.globalAlpha = k < 0.3 ? 1 : Math.max(0, 1 - (k - 0.3) / 0.7);
+      this.block(f.x, f.y | 0, true, true, true, true, PAL.blockDim);
+    }
+    ctx.globalAlpha = 1;
+  },
+
   tiles(w) {
     const ctx = this.ctx;
     for (let r = 0; r < ROWS; r++) {
@@ -306,6 +321,7 @@ const Render = {
     if (w.mirror) { ctx.translate(VW, 0); ctx.scale(-1, 1); }
 
     this.tiles(w);
+    this.fallingTiles(w);
     this.door(w);
     this.movers(w);
     this.player(w);

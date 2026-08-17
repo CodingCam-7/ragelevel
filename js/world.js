@@ -65,6 +65,7 @@ class World {
     this.anims = Object.create(null);   // "c,r" -> {t0, dur} for rising spikes
     this.crumbling = Object.create(null);
     this.stung = Object.create(null);   // phantom tiles already sounded off this life
+    this.falling = [];                  // phantom tiles currently dropping away
 
     this.triggers = (def.triggers || []).map((t) => ({
       x: t.x, y: t.y, w: t.w, h: t.h,
@@ -264,6 +265,7 @@ class World {
     }
 
     Particles.update();
+    this.updateFalling();
 
     if (this.shake > 0) this.shake = Math.max(0, this.shake - 0.6);
     if (this.flash > 0) this.flash--;
@@ -430,6 +432,39 @@ class World {
     }
   }
 
+  /**
+   * Detach a phantom tile and let it fall. Purely cosmetic: 'F' was never
+   * solid, so removing it changes no collision and cannot alter whether a
+   * level is beatable.
+   */
+  dropPhantom(c, r) {
+    this.set(c, r, ' ');
+    this.falling.push({
+      x: c * TILE,
+      y: r * TILE,
+      vy: 0,
+      dir: this.gravDir,   // frozen at drop time so a later flip can't yank it back up
+      life: 0
+    });
+  }
+
+  /**
+   * Falling phantoms are debris, not bodies: no collision, nothing to land on.
+   * They run outside the `state === 'play'` gate so a block you fell through
+   * keeps dropping during the death freeze rather than hanging in mid-air.
+   */
+  updateFalling() {
+    for (let i = this.falling.length - 1; i >= 0; i--) {
+      const f = this.falling[i];
+      f.vy += PHYS.gravity * 0.6;   // lighter than the player: it trails you down
+      f.y += f.vy * f.dir;
+      f.life++;
+      if (f.life > PHANTOM_FALL_LIFE || f.y < -TILE * 2 || f.y > ROWS * TILE + TILE * 2) {
+        this.falling.splice(i, 1);
+      }
+    }
+  }
+
   /** Spike hitboxes are deliberately smaller than their tile. */
   spikeBox(c, r, ch) {
     const anim = this.anims[c + ',' + r];
@@ -466,12 +501,16 @@ class World {
             return;
           }
         } else if (ch === 'F') {
-          // One sting as you drop through a phantom tile. Nothing is recorded
-          // anywhere, so the lie is just as convincing on the next attempt.
+          // Touch a phantom and it drops away, so the betrayal has a visible
+          // author instead of the player just sinking through solid-looking
+          // ground. The tile is only cleared from *this* grid, and reset()
+          // rebuilds the grid from def.map, so dying restores the lie intact —
+          // the level never accumulates a map of which tiles were fake.
           const key = c + ',' + r;
           if (!this.stung[key] &&
               aabb(p.x, p.y, p.w, p.h, c * TILE, r * TILE, TILE, TILE)) {
             this.stung[key] = true;
+            this.dropPhantom(c, r);
             Sfx.crumble();
           }
         }

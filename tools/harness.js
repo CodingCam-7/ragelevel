@@ -124,6 +124,66 @@ LEVELS.forEach(function (lv, i) {
     (invisible === '' && phantom === solid ? 'ok' : 'FAILED'));
 })();
 
+// --- phantom drop-and-restore ---------------------------------------------
+// A phantom that falls away must come back on the next life. If it did not,
+// every death would hand the player a free map of which tiles were fake, and
+// the level would get easier the worse you played at it.
+(function () {
+  var levelIndex = -1, pc = -1, pr = -1;
+  for (var i = 0; i < LEVELS.length && levelIndex < 0; i++) {
+    var probe = new World(LEVELS[i], Game);
+    for (var r = 0; r < ROWS && levelIndex < 0; r++) {
+      for (var c = 0; c < COLS; c++) {
+        if (probe.grid[r][c] === 'F') { levelIndex = i; pc = c; pr = r; break; }
+      }
+    }
+  }
+
+  if (levelIndex < 0) {
+    console.error('no phantom tile found in any level - is F still in use?');
+    problems++;
+    return;
+  }
+
+  var w = new World(LEVELS[levelIndex], Game);
+  var tag = 'L' + (levelIndex + 1) + ' ' + LEVELS[levelIndex].name + ' phantom at ' + pc + ',' + pr;
+
+  w.dropPhantom(pc, pr);
+  if (w.grid[pr][pc] !== ' ') {
+    console.error(tag + ': did not clear the tile when dropped');
+    problems++;
+  }
+  if (w.falling.length !== 1) {
+    console.error(tag + ': expected 1 falling block, got ' + w.falling.length);
+    problems++;
+  }
+
+  // it must actually travel, or there is no cue to learn from
+  var y0 = w.falling[0].y;
+  for (var f = 0; f < 10; f++) w.updateFalling();
+  if (!(w.falling.length && w.falling[0].y > y0)) {
+    console.error(tag + ': dropped block did not fall');
+    problems++;
+  }
+
+  // and it must not linger past its life
+  for (var f2 = 0; f2 < PHANTOM_FALL_LIFE + 5; f2++) w.updateFalling();
+  if (w.falling.length !== 0) {
+    console.error(tag + ': falling block outlived PHANTOM_FALL_LIFE');
+    problems++;
+  }
+
+  // the whole point: dying puts the lie back
+  w.reset();
+  var restored = w.grid[pr][pc] === 'F';
+  var cleared = w.falling.length === 0 && Object.keys(w.stung).length === 0;
+  if (!restored) { console.error(tag + ': NOT restored after reset - deaths would reveal the path'); problems++; }
+  if (!cleared) { console.error(tag + ': falling/stung state survived reset'); problems++; }
+
+  console.log('phantom drops, falls, expires, and is restored by reset -> ' +
+    (restored && cleared ? 'ok' : 'FAILED'));
+})();
+
 // --- dynamic bot run ------------------------------------------------------
 // Crude bot: hold right, jump when blocked or when a gap/spike is ahead.
 // The point is to exercise triggers, movers and collision, not to actually win.
