@@ -304,21 +304,74 @@ const LEVELS = [
     ]
   },
 
-  /* ---------------------------------------------------------------- 9 */
+  /* ---------------------------------------------------------------- 9 *
+   * The darkness is a ~3 tile bubble around the player, not a blackout, so
+   * anything altered further out than that is invisible until you are nearly
+   * on top of it. Every hazard here is built at that range while you are
+   * blind, four times over: the level you memorised on the last attempt is
+   * never the level you are walking through now.
+   *
+   * Nothing is placed in the map itself. A static spike you can learn once
+   * is exactly the problem this level used to have. */
   {
     name: 'LIGHTS OUT',
     map: [
       ...Array(15).fill(EMPTY),
-      place({ 2: 'P', 12: '^^', 20: '^^', 29: 'D' }),
+      place({ 2: 'P', 29: 'D' }),
       FULL, FULL
     ],
+    init(w) { w.msg('nice and bright in here', 120); },
     triggers: [
       {
-        x: 6, y: 10, w: 2, h: 8,
+        x: 6, y: 10, w: 1, h: 8,
         run(w) { w.setDark(true); w.msg('oops'); Sfx.trap(); }
       },
+
+      // 1. the floor ahead stops existing. Deliberately the gentlest of the
+      // four -- two tiles, opened four ahead so it reaches the edge of the
+      // light bubble with a moment to spare. An opener that kills everyone
+      // means nobody ever meets changes 3 and 4.
       {
-        x: 25, y: 10, w: 2, h: 8,
+        x: 8, y: 10, w: 1, h: 8,
+        run(w) { w.crumbleNow(12, 16, 2, 2); w.shakeIt(6); }
+      },
+
+      // 2. spikes on the landing side, armed once you are already committed
+      // to the jump and can no longer choose otherwise
+      {
+        x: 13, y: 10, w: 1, h: 8,
+        run(w) { w.after(10, (wl) => wl.spikes(17, 15, 2, '^')); }
+      },
+
+      // 3. a wall in the dark with a spike tucked in behind it, so clearing
+      // the wall is not enough -- the hop has to carry past both. The flash
+      // shows you the shape far too late to re-plan. Setting dark directly
+      // rather than via setDark leaves darkTarget at 1, so the light dies
+      // again on its own over the next ~20 frames.
+      {
+        x: 17, y: 10, w: 1, h: 8,
+        run(w) {
+          w.wall(21, 14, 1, 2);
+          w.spikes(22, 15, 1, '^');
+          w.dark = 0.1;
+          Sfx.teleport();
+        }
+      },
+
+      // 4. the floor goes one last time, and then the landing goes too. The
+      // delay is the point: the far lip looks safe at the moment you commit
+      // to the jump, and stops being safe while you are in the air.
+      {
+        x: 21, y: 10, w: 1, h: 8,
+        run(w) {
+          w.crumbleNow(24, 16, 2, 2);
+          w.shakeIt(5);
+          w.after(22, (wl) => { wl.crumbleNow(26, 16, 1, 2); wl.shakeIt(4); });
+        }
+      },
+
+      {
+        x: 27, y: 10, w: 1, h: 8,
         run(w) { w.setDark(false); w.msg('welcome back'); Sfx.teleport(); }
       }
     ]

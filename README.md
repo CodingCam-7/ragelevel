@@ -67,7 +67,7 @@ Fourteen levels, each built around one betrayal:
 | 6 | Fake News | Half the bridge is a painting |
 | 7 | Catch Me | The door refuses to be caught, three times |
 | 8 | Squish | Ceiling crushers on offset timers, then a charger guards the door |
-| 9 | Lights Out | The lights go out over a spike field |
+| 9 | Lights Out | The lights go out and the room rebuilds itself four times |
 | 10 | Upside Down | Gravity inverts; the exit is on the ceiling |
 | 11 | Trapdoor | The floor vanishes, except for the parts you can't see |
 | 12 | Mirror | Left and right swap. Then swap back |
@@ -103,6 +103,7 @@ tools/
   harness.js  smoke test + invisibility audit
   solver.js   greedy bot, proves levels 1-13 completable
   finale.js   route-following bot for level 14
+  dark.js     level 9 played with vision limited to the light radius
   crusher.js  crusher timing
 ```
 
@@ -167,18 +168,24 @@ glyph sizes. Both report to the browser console.
 JavaScriptCore (built into macOS) and drive bots through it. Nothing to install.
 
 ```
-./tools/check.sh          # all four
+./tools/check.sh          # all five
 ./tools/check.sh solver   # just one
 ```
 
 | Check | Proves |
 | --- | --- |
-| `harness.js` | Nothing throws, geometry is sane, and `I`/`F` tiles give nothing away visually |
+| `harness.js` | Nothing throws, geometry is sane, `I`/`F` tiles give nothing away, level 8's charger stays unreactable, and the death-count wipe stays expensive |
 | `solver.js` | A greedy bot can complete levels 1–13 |
 | `finale.js` | Level 14, which needs backtracking, is beatable by a route-following bot |
+| `dark.js` | Level 9 is beatable using only what the light bubble shows, and punishing when you react late |
 | `crusher.js` | Crushers slam exactly once per cycle and travel end to end |
 
-`check.sh` exits non-zero if any check fails, and runs all four even after one
+`dark.js` exists because `solver.js` reads the grid directly, so darkness is
+invisible to it — level 9 could become unreadable and still pass as SOLVABLE.
+It drives a bot that may only act on hazards inside the light radius, and only
+after a reaction delay.
+
+`check.sh` exits non-zero if any check fails, and runs all five even after one
 fails so a second breakage can't hide behind the first.
 
 **Run it after touching physics constants or level layouts.** That is the

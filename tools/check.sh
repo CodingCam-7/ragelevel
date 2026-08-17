@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 
 # harness first: it is the cheapest and catches load-time breakage that would
 # make the slower solvers fail in confusing ways.
-CHECKS=${*:-"harness solver finale crusher"}
+CHECKS=${*:-"harness solver finale dark crusher"}
 
 failed=""
 for name in $CHECKS; do
