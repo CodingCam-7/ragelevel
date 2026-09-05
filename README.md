@@ -59,9 +59,9 @@ Fourteen levels, each built around one betrayal:
 
 | # | Name | The joke |
 | --- | --- | --- |
-| 1 | Warm Up | A long walk to an honest door, and one tile of floor that isn't |
-| 2 | Trust Issues | The floor tells you which tiles it will take away, and the one clean tile is the lie |
-| 3 | Pointy | A spike you must jump, a block where that jump peaks, a hole where the smaller one lands |
+| 1 | Pits | Level Devil's first door: the floor opens, twice, then walks towards you |
+| 2 | Spikes | Its second: the floor grows teeth, and the ceiling answers your jump |
+| 3 | Walls | Its third: things appear in front of you, and one of them plays peek-a-boo |
 | 4 | The Shortcut | A solid-looking floor tile isn't; a wall rises on the way out |
 | 5 | Look Down | The "pit" is safe. Jumping over it is not. The next gap is real |
 | 6 | Fake News | Half the bridge is a painting, and the halves are uneven |
@@ -105,9 +105,9 @@ stand on it. A level is laid out as **sections**, each ten tiles of
 self-contained fight, placed left to right:
 
 ```js
-route(w, POINTY_SECTIONS, [
-  ['GREETING', 'LEDGE', 'CEILING', 'HOP', 'DROPOUT'],   // variant 0
-  ['GREETING', 'HOP', 'DROPOUT', 'LEDGE', 'CEILING'],   // variant 1
+route(w, PIT_SECTIONS, [
+  ['LATE', 'TWO', 'CHASE', 'GAP', 'ENCORE'],   // variant 0
+  ['LATE', 'CHASE', 'TWO', 'GAP', 'ENCORE'],   // variant 1
   ...
 ]);
 ```
@@ -117,12 +117,15 @@ somewhere you have not been. The door does not move. There is one door and you
 reach it once.
 
 A route is not *longer* than the journey it replaced, and it is worth saying so
-plainly, because "longer" is the thing it looks like it should buy. On the
-optimal line the solver walks, a five-section route comes out the same or
-shorter — L1 381–504f → 384–480f, L2 420–445f → 384–418f, L3 521–599f →
-388–494f, L13 434–473f → 391–436f. A journey padded its count with dead time: the teleport beat, the
-hazards arming after a delay, and a walk back over floor already crossed. What
-a route changes is that none of those frames is a repeat.
+plainly, because "longer" is the thing it looks like it should buy. Measured at
+the time of each conversion, on the optimal line the solver walks, a
+five-section route came out the same or shorter — L1 381–504f → 384–480f, L2
+420–445f → 384–418f, L3 521–599f → 388–494f, L13 434–473f → 391–436f. (Levels
+1–3 have since been replaced wholesale, so L13 is the only surviving
+like-for-like pair; the rest is the record of the measurement.) A journey padded
+its count with dead time: the teleport beat, the hazards arming after a delay,
+and a walk back over floor already crossed. What a route changes is that none of
+those frames is a repeat.
 
 The floor on a route level is the bottom row of the screen and exactly one tile
 thick. That is not decoration: a thicker floor needs the rows under a phantom
@@ -179,19 +182,25 @@ A section is not one trap. It is a trap, and a punishment for the answer to it:
    what step 1 taught you to do
 3. the refinement that beats step 2 has its own landing covered
 
-Level 3's `CEILING` section is the canonical one. Spikes shoot out of the
+Level 2's `SANDWICH` section is the canonical one. Spikes shoot out of the
 floor, so you jump. Next life you know they are coming, so you jump early and
 high — and a block slams in at the exact height a full jump peaks at, dropping
 you onto fresh spikes. The answer is a *half* jump, which is a thing you have
-to be taught by being killed for the whole one. Overshoot that half jump and
-you land on a phantom three tiles further on.
+to be taught by being killed for the whole one.
+
+It used to have a third rung: overshoot the half jump and you landed on a
+phantom three tiles further on. That rung is in the history rather than in the
+game, because Level Devil rates its Spikes door *Easy* and publishes two trolls
+for this stage, and three rungs put the fifth section of every variant out of
+the solver's reach — with no checkpoint, the third rung has to be beaten with
+the whole level already behind you. It is a good trap and it belongs in a door
+that is meant to be hard.
 
 `tools/escalate.js` prints the whole band and asserts it:
 
 ```
   hold  outcome
-   3-8  through
-     9  fell (the phantom)
+   3-9  through
  10-16  spiked (the anti-air block)
 ```
 
@@ -269,7 +278,7 @@ tools/
   harness.js  smoke test + invisibility audit
   jump.js     measures the jump arc the route traps are built on
   viewport.js proves the canvas always fits and the camera stays in the level
-  escalate.js proves level 3's trap chain still escalates
+  escalate.js proves level 2's trap chain still escalates
   solver.js   greedy bot, proves levels 1-13 completable
   finale.js   route-following bot for level 14
   dark.js     level 9 played with vision limited to the light radius
@@ -364,7 +373,7 @@ JavaScriptCore (built into macOS) and drive bots through it. Nothing to install.
 | `harness.js` | Nothing throws, geometry is sane, `I`/`F` tiles give nothing away, level 8's charger stays unreactable, and the death-count wipe stays expensive |
 | `jump.js` | The jump arc, measured: a full jump peaks four rows above the floor and a tapped one two, so a block at `STAND-3` stops the big jump and lets the small one through. Fails if that gap ever closes |
 | `viewport.js` | Neither grid is ever clipped, at thirteen window sizes from 1920x1080 down to a phone, and the scale stays on whole pixels wherever there is room for it |
-| `escalate.js` | Level 3's chain still escalates — the spike forces a hop, overshooting it finds the phantom, and only the biggest jumps trip the block — and that the block stays aimed rather than banning jumping outright |
+| `escalate.js` | Level 2's chain still escalates — the spike forces a hop, and only the biggest jumps trip the block — and that the block stays aimed rather than banning jumping outright |
 | `solver.js` | A greedy bot can complete every variant of levels 1–13 |
 | `finale.js` | Every variant of level 14, which needs backtracking, is beatable by a route-following bot |
 | `dark.js` | Every variant of level 9 is beatable using only what the light bubble shows, and punishing when you react late |

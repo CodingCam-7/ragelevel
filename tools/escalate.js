@@ -95,12 +95,16 @@ function expect(label, got, want, cause) {
   if (!ok) problems++;
 }
 
-/* Find CEILING rather than hardcoding where it sits. Which sections a route
- * uses and in what order is the variant's business and gets rebalanced; this
- * check pinned the column once and silently started measuring a stretch of
- * empty floor when the route changed, reporting the trap as broken when it was
- * merely somewhere else. Ask the world where it put things. */
-var POINTY = 2;
+/* Find the section rather than hardcoding where it sits. Which sections a
+ * route uses and in what order is the variant's business and gets rebalanced;
+ * this check pinned the column once and silently started measuring a stretch
+ * of empty floor when the route changed, reporting the trap as broken when it
+ * was merely somewhere else. Ask the world where it put things.
+ *
+ * It used to point at level 3, which is now Level Devil's Walls door and has
+ * no escalating chain in it at all. The chain moved to level 2's SANDWICH,
+ * which is the same trap minus its third rung -- see the note there. */
+var SPIKES = 1;                  // level 2, zero-indexed
 
 function sectionStart(levelIndex, variant, name) {
   World.forceVariant = variant;
@@ -113,32 +117,22 @@ function sectionStart(levelIndex, variant, name) {
                   ' has no "' + name + '" section');
 }
 
-/* Whichever variant runs CEILING earliest, so the run-up crosses as little
- * unrelated ground as possible. */
-var VARIANT = 0;
-var CEILING_C0 = sectionStart(POINTY, VARIANT, 'CEILING');
-var SPIKE = CEILING_C0 + 5;      // trapSpikes(c0 + 5, ...)
-var PHANTOM = CEILING_C0 + 8;    // w.set(c0 + 8, FLOOR, 'F')
+/* Variant 1 runs SANDWICH second, immediately after the opening section, so
+ * the run-up crosses no unrelated ground at all and nothing between the two
+ * can be blamed for a failure here. */
+var VARIANT = 1;
+var C0 = sectionStart(SPIKES, VARIANT, 'SANDWICH');
+var SPIKE = C0 + 5;              // trapSpikes(c0 + 5, ...)
+var STOP = C0 + 12;              // clear of the section either way
 
-console.log('L3 POINTY / CEILING  (spike at col ' + SPIKE + ', phantom at ' + PHANTOM + ')');
+console.log('L2 SPIKES / SANDWICH  (spike at col ' + SPIKE + ')');
 console.log('');
 
-/* GREETING opens every route with its own spikes at c0+6..c0+7 = 10-11, so
+/* GROUND opens every variant with its own spikes at c0+6..c0+7 = 10-11, so
  * every run crosses those first with a known-good hop and only then meets the
- * section under test. That first hop is also the point: by the time CEILING's
- * spike arrives, "jump it" is a habit this level just finished installing.
- *
- * Anything between GREETING and CEILING in this variant is connective ground
- * by construction -- routes put at most one signature trap in a level -- so a
- * spare hop over each intervening section clears the way without needing to
- * know what is in it. */
-var GREET = [9, 14];
-var APPROACH = [GREET];
-for (var g = CEILING_C0 - SECTION_W; g > 13; g -= SECTION_W) APPROACH.unshift([g + 3, 12]);
-/* c0+3, not c0+4: every connector puts its obstacle at c0+4 or c0+5, so a jump
- * taken at c0+4 is taken *into* LEDGE's block rather than over it, and the run
- * simply stops dead against it. */
-APPROACH.sort(function (a, b) { return a[0] - b[0]; });
+ * section under test. That first hop is also the point: by the time SANDWICH's
+ * spike arrives, "jump it" is a habit the level just finished installing. */
+var APPROACH = [[9, 14]];
 
 /* Sweep the whole jump rather than testing two points either side of a line.
  * The line moved once already -- tools/jump.js measures a jump from a
@@ -146,27 +140,21 @@ APPROACH.sort(function (a, b) { return a[0] - b[0]; });
  * so its hold numbers sit one frame off from these and a point test picked the
  * wrong side of the boundary. A sweep cannot be wrong about where the boundary
  * is; it prints it. */
-/* The full route through the section is two hops, not one: clear the spike,
- * then clear the phantom three tiles later. The second hop is only in here
- * because a player has died to the phantom and learned it exists -- which is
- * the whole design of rung three, and is asserted separately below. */
-console.log('  hold  outcome (hop the spike from col ' + (SPIKE - 1) +
-            ', then hop the phantom from ' + (PHANTOM - 1) + ')');
-var lived = [], byBlock = [], byPhantom = [], other = [];
+console.log('  hold  outcome (hop the spike from col ' + (SPIKE - 1) + ')');
+var lived = [], byBlock = [], other = [];
 for (var h = 3; h <= 16; h++) {
-  var r = run(POINTY, VARIANT, APPROACH.concat([[SPIKE - 1, h], [PHANTOM - 1, 8]]), PHANTOM + 4);
+  var r = run(SPIKES, VARIANT, APPROACH.concat([[SPIKE - 1, h]]), STOP);
   var what = r.died ? r.cause + ' at ' + r.col : 'through to ' + r.col;
   console.log('  ' + (h < 10 ? ' ' : '') + h + '    ' + what);
   if (!r.died) lived.push(h);
-  else if (r.cause === 'fell') byPhantom.push(h);
   else if (r.cause === 'spiked') byBlock.push(h);
   else other.push(h);
 }
 
 console.log('');
 console.log('  small hops through : ' + (lived.join(' ') || 'none'));
-console.log('  dropped by phantom : ' + (byPhantom.join(' ') || 'none'));
 console.log('  killed by anti-air : ' + (byBlock.join(' ') || 'none'));
+console.log('  other              : ' + (other.join(' ') || 'none'));
 console.log('');
 
 function assert(label, ok) {
@@ -178,24 +166,20 @@ assert('a hop exists that clears the spike and lives', lived.length >= 3);
 assert('the biggest jumps are punished', byBlock.length >= 2);
 assert('every punished jump is bigger than every safe one',
        lived.length > 0 && byBlock.length > 0 && Math.max.apply(null, lived) < Math.min.apply(null, byBlock));
-/* Rung three on its own: the player who has beaten the spike and the block,
- * and does not yet know about the phantom, walks off the end of the world. */
-expect('clear the spike, then walk on unsuspecting',
-       run(POINTY, VARIANT, APPROACH.concat([[SPIKE - 1, 6]]), PHANTOM + 4), 'died', 'fell');
 
-/* And the counter has to be aimed, not ambient: a full jump taken well clear
- * of the block must survive, or "jumping" itself is banned and the trap is not
- * a trap, it is a rule. Column 6 is open ground in every variant. */
+/* The counter has to be aimed, not ambient: a full jump taken well clear of
+ * the block must survive, or "jumping" itself is banned and the trap is not a
+ * trap, it is a rule. Column 6 is open ground in every variant. */
 console.log('');
 expect('full send in open ground (must NOT be punished)',
-       run(POINTY, VARIANT, [[6, 24]], 9), 'lived');
+       run(SPIKES, VARIANT, [[6, 24]], 9), 'lived');
 
 expect('walk into the spike, no jump',
-       run(POINTY, VARIANT, APPROACH, SPIKE + 4), 'died', 'spiked');
+       run(SPIKES, VARIANT, APPROACH, SPIKE + 4), 'died', 'spiked');
 
 console.log('');
 console.log(problems === 0
-  ? 'PASS - spike forces a hop, the phantom punishes overshooting it, the block punishes the big one'
+  ? 'PASS - the spike forces a hop, and the block punishes the big one'
   : problems + ' expectation(s) broken');
 
 logs.forEach(function (l) { print(l); });

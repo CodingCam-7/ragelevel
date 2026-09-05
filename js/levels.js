@@ -391,13 +391,20 @@ function route(w, pool, orders) {
  *
  * Five was the target, not four -- but not because five makes the level
  * longer, and it is worth being exact about that because the obvious claim is
- * false. Measured against the three-leg journeys these replaced, a five-section
- * route is the same length or shorter on the optimal line:
+ * false. Measured when these were converted, against the three-leg journeys
+ * they replaced, a five-section route came out the same length or shorter on
+ * the optimal line:
  *
  *   L1   journey 381-504f   ->   route 384-480f
  *   L2   journey 420-445f   ->   route 384-418f
  *   L3   journey 521-599f   ->   route 388-494f
  *   L13  journey 434-473f   ->   route 391-436f
+ *
+ * Levels 1-3 have since been replaced wholesale by Level Devil's first three
+ * doors, so only L13 is still a like-for-like pair -- the other three rows are
+ * the record of a measurement rather than a claim about the levels currently
+ * carrying those numbers. The finding held across four conversions and is why
+ * the section count is what it is, which is why it is still written down.
  *
  * A journey bought its frame count partly with dead time -- the teleport beat,
  * the armed-after-a-delay pause, and a walk back over floor already crossed --
@@ -457,318 +464,388 @@ const CONNECTORS = {
   }
 };
 
-/* Level 1. The traps are soft on purpose -- level 1 teaches the grammar of
- * the rest of the game and should be maddening rather than punishing -- but
- * the shape is already the real shape: you walk right, the ground is longer
- * than you expected, and exactly one thing about it is a lie. */
-const WARMUP_SECTIONS = Object.assign({}, CONNECTORS, {
-
-  /* The first spikes in the game, and they behave exactly as spikes should:
-   * they announce themselves, they are jumpable, nothing counters the jump. */
-  FIRSTSPIKE: {
-    width: SECTION_W,
-    build() {},
-    arm(w, s) { trapSpikes(w, s.c0 + 6, 2, s.c0 + 1); }
-  },
-
-  /* And the lesson. A flat, plain, boring stretch of floor with one tile in
-   * it that is not floor. Nothing marks it, nothing ever will, and the level
-   * has spent fifty tiles establishing that flat floor is flat floor. */
-  FIRSTLIE: {
-    width: SECTION_W,
-    build(w, s) { w.set(s.c0 + 5, FLOOR, 'F'); },
-    arm(w, s) {
-      w.watch({
-        x: s.c0 + 6, y: FLOOR - 3, w: 4, h: 4,
-        run(wl) { wl.msg('the floor was the trap.'); }
-      });
-    }
-  }
-});
-
-/* Level 2. The floor is the subject, and the level's whole argument is about
- * which floor you are willing to believe.
+/* ------------------------------------------------------------------ *
+ * Level Devil's first three doors
  *
- * Brittle tiles are *drawn cracked*. That is not a concession, it is the
- * premise: this level tells you exactly which ground it is going to take away
- * and takes it away anyway, because knowing does not help when the answer is
- * "then do not stand still" and the level keeps arranging reasons to stand
- * still. Everything here is a variation on being denied a place to put your
- * feet for a quarter of a second.
+ * Level Devil is built out of DOORS, and a door is five short single-screen
+ * stages on one idea: door 1 is Pits, door 2 is Spikes, door 3 is Walls. You
+ * clear all five to move on. A stage is one room with one trap in it, and the
+ * trap is nearly always the same shape -- the room looks finished, you commit
+ * to the obvious line, and the room edits itself while you are mid-commitment.
  *
- * A crumble fuse is 15 frames and maxRun is 2.4px -- so a tile you stepped on
- * is gone by the time you are 2.25 tiles past it. Cracked ground crossed at
- * a walk is survivable and cracked ground crossed at a dither is not, and
- * that ratio is the only difficulty knob this level has. Both numbers live in
- * PHYS and World.updateCrumbling; change either and re-measure before
- * widening any of the spans below.
+ * A ragelevel route is already five self-contained fights placed left to
+ * right, which is the same object with the cuts taken out: door 1's five
+ * stages become level 1's five sections, and instead of a screen wipe between
+ * them you walk. Nothing here needed inventing; it needed transcribing.
+ *
+ * Door 1 is transcribed stage by stage, because the wiki documents all five
+ * of them and the solutions are one line each. Doors 2 and 3 are reconstructed
+ * from their theme and their published troll counts -- Spikes is 1, 2, 2, none
+ * and 1, so its fourth stage is honest, and that shape is preserved -- because
+ * no stage-level source for them exists. They are faithful to the door rather
+ * than copies of it, and this comment exists so nobody later mistakes the
+ * second kind for the first.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Fire on the player's COLUMN, at any height.
+ *
+ * The ordinary zone trigger is a box near the floor, which is right for a trap
+ * that answers walking. It is wrong for every trap in these three doors: the
+ * joke is that the room changes as you commit, and a player who commits early
+ * commits by jumping -- straight over a floor-height box, so the trap never
+ * arms and the level quietly hands them the win it was built to deny.
  */
-const TRUST_SECTIONS = Object.assign({}, CONNECTORS, {
+function onColumn(w, from, n, run) {
+  w.watch({ x: from, y: 0, w: n, h: BIG_ROWS, run: run });
+}
 
-  /* Rung zero, and it opens every variant. A plain run of cracked floor with
-   * nothing else in it: cross it at a walk and you live, stop on it and the
-   * ground is gone in a quarter of a second.
-   *
-   * Five tiles is deliberately short of dangerous -- 33 frames to cross, and
-   * the first tile does not blow until you are two tiles past it -- because
-   * this section is not a fight, it is the sentence the rest of the level
-   * argues with. A player has to have crossed cracked floor safely once for
-   * "you cannot stop here" to land later as a trap rather than as noise. */
-  CRUST: {
-    width: SECTION_W,
-    build(w, s) { w.fill(s.c0 + 3, FLOOR, 5, 1, 'B'); }
-  },
+/** Is the player clear of these columns? */
+function clearOf(w, c, n) {
+  const p = w.player;
+  return p.x + p.w <= c * TILE || p.x >= (c + n) * TILE;
+}
 
-  /* Cracked floor with a reason to leave it. Spikes fire out of the ground
-   * partway across, so the crossing has to be broken by a jump, and both the
-   * take-off and the landing are on floor that is already dissolving.
-   *
-   * The tile the spikes come out of is the one solid tile in the run, and it
-   * is solid for a reason that is mechanical before it is funny: spikes need
-   * a floor under them to sit on, and a spike whose floor crumbles away is
-   * left hanging in mid-air, still lethal, with nothing under it to explain
-   * why. harness.js checks for exactly that at load and would not have caught
-   * it here, because the tile is honest until fifteen frames after someone
-   * stands on it.
-   *
-   * It is also, unavoidably, the joke: the only ground in this section that
-   * will hold you is the ground with the spikes on it. */
-  TEETER: {
-    width: SECTION_W,
-    build(w, s) {
-      w.fill(s.c0 + 2, FLOOR, 6, 1, 'B');
-      w.set(s.c0 + 5, FLOOR, '#');
-    },
-    arm(w, s) { trapSpikes(w, s.c0 + 5, 1, s.c0 + 1); }
-  },
+/**
+ * A hole that walks along the floor towards you (door 1, stage 3).
+ *
+ * Stepped rather than smooth, and it closes behind itself, so at any moment
+ * the floor has exactly one hole in it and the hole is somewhere new. It is
+ * scheduled as a chain of `after` calls rather than a mover because it is not
+ * an object -- there is nothing to draw and nothing to collide with. It is the
+ * ground being edited on a timer, which is what makes it read as the level
+ * doing it to you rather than as a hazard you are sharing the room with.
+ *
+ * Only the trailing edge is restored. Refilling the whole span each step would
+ * be simpler and would occasionally close a tile the player is standing in,
+ * which the collision resolver has no good answer to.
+ */
+function travellingPit(w, from, to, width, step) {
+  const dir = to < from ? -1 : 1;
+  const steps = Math.abs(to - from);
 
-  /* The level's actual point, and it always goes last, because it is a lie
-   * that only works once the truth it inverts has been established.
+  for (let i = 0; i <= steps; i++) {
+    const c = from + dir * i;
+    w.after(i * step, (wl) => {
+      if (i > 0) wl.set(dir < 0 ? c + width : c - 1, FLOOR, '#');
+      wl.clear(c, FLOOR, width, 1);
+      if (i === 0) { wl.shakeIt(4); Sfx.crumble(); }
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Door 1 - PITS
+ *
+ * "The ground may collapse or a huge sinkhole may form." Super Easy in Level
+ * Devil, death limit 7, and every stage is one jump. The difficulty is
+ * entirely in *when* the jump happens, which is the perfect first lesson: the
+ * controls are not the problem and never will be, and the floor is not
+ * evidence.
+ * ------------------------------------------------------------------ */
+const PIT_SECTIONS = {
+
+  /* 1-1-1: "Jump at the last second as the pit may make you fall."
    *
-   * Cracked floor, an honest one-tile hole in it, and on the far side of the
-   * hole two tiles that are not cracked -- clean, ordinary, the only
-   * trustworthy-looking ground in fifty tiles of warnings. The near one is a
-   * phantom. The far one is real. They are drawn identically, because an 'F'
-   * is pixel-identical to a '#' everywhere in this game.
+   * Flat, honest, boring floor, and a hole opens in it two tiles ahead of you
+   * once you are close enough to be committed. Walk into it and you fall.
    *
-   * Every other level's phantom hides in ground that looks like all the other
-   * ground. This one is *advertised*, in the only vocabulary the level has,
-   * and the advertisement is what kills you: the level has spent four sections
-   * teaching you to read cracks as danger, so a tile without cracks reads as
-   * safety, and the short hop over the hole puts you on the first one.
-   *
-   * Two clean tiles rather than one, and the second being solid, is what makes
-   * this a trap instead of a wall. The lesson is a whole tile of aim -- "the
-   * far one, not the near one" -- which is a thing a player can see, decide
-   * and execute. It also puts the correct landing on ground with no fuse in
-   * it, and that is the part this section was rebuilt for: the first version
-   * ran cracked floor for three more tiles past the phantom, so beating the
-   * lie dropped you onto a fifteen-frame fuse with three tiles left to cross,
-   * and tools/solver.js duly failed variant 3 at column 56 -- having answered
-   * the trap correctly. A trap whose punishment lands on the right answer is
-   * not an escalation, it is a tax, and it is unreadable besides: nothing on
-   * screen distinguishes the run you survive from the run you do not.
-   *
-   * The hole is real and one tile wide, not two, and not decoration. It is
-   * there to make the short hop the natural jump rather than something the
-   * player has to be talked into: without it there is no reason to leave the
-   * ground at all and the phantom is just level 1's trick again. */
-  BREATHER: {
+   * The joke is the *early* jump, and it is the reason the trigger reads your
+   * column at any height rather than your feet. A player who has been told
+   * this game lies will jump the moment they are suspicious -- from about
+   * here -- and a full jump covers 5.1 tiles, which lands them precisely in
+   * the hole their own caution just opened. Jumping late is safe. Jumping
+   * early is the trap. Nothing else in the game is that shape, and it is the
+   * first thing Level Devil teaches. */
+  LATE: {
     width: SECTION_W,
-    build(w, s) {
-      w.fill(s.c0 + 2, FLOOR, 7, 1, 'B');
-      pit(w, s.c0 + 4, 1);
-      w.set(s.c0 + 5, FLOOR, 'F');   // the near clean tile: not there
-      w.set(s.c0 + 6, FLOOR, '#');   // the far one: identical, and real
-    },
+    build() {},
     arm(w, s) {
-      w.watch({
-        x: s.c0 + 7, y: FLOOR - 3, w: 2, h: 4,
-        run(wl) { wl.msg('the clean one was the lie.'); }
+      onColumn(w, s.c0 + 2, 3, (wl) => {
+        wl.crumbleNow(s.c0 + 5, FLOOR, 2, 1);
+        wl.shakeIt(5);
       });
     }
   },
 
-  /* This level's idea taken off the floor: a wall too tall to jump, one step
-   * up its near side, and the ledge you land on is cracked at the end you
-   * arrive at.
+  /* 1-1-2: "There is 2 pits in this part of the level. Jump twice."
    *
-   * Climbing is where standing still is hardest to avoid -- a jump has to be
-   * aimed, and aiming is done with your feet planted -- so a cracked ledge is
-   * the same demand the floor has been making, somewhere the player has much
-   * less room to answer it.
-   *
-   * The far end of the ledge is solid, and that tile is load-bearing in a way
-   * that has nothing to do with the joke: without it, a player who dithers
-   * once loses the cracked tiles and the climb becomes a rise nothing in this
-   * game can make. That is not a death -- falling off drops you on the floor
-   * unharmed, which is deliberate and is the same reasoning that keeps spikes
-   * out from under POINTY's STAIRWELL -- it is a level that cannot be finished
-   * and cannot kill you either, which is the one outcome worse than an unfair
-   * death, because the player has to work out for themselves that the level is
-   * over and press R. So the punishment for dithering is that the next attempt
-   * has to land on one tile instead of three.
-   *
-   * ONE step, not two, and that is a measurement rather than a preference.
-   * The first version stood a six-row wall here and climbed it in two hops,
-   * the second launched from the cracked step -- which is the whole idea, and
-   * it cost 754f and 905f on the two variants that carry this section against
-   * 406f and 426f on the two that do not. A greedy bot flails at an
-   * apex-limited hop taken off ground that is dissolving under the wind-up,
-   * and a level-2 player would have flailed at it too. Flattening the wall so
-   * its top is flush with the ledge removes the second hop entirely: 384f and
-   * 390f, in line with levels 1 and 3, and the cracked tiles still have to be
-   * crossed without stopping.
-   *
-   * The remaining geometry is the standard spacing: the step sits at STAND,
-   * the player's own body row, so it is a wall in the path rather than a
-   * ceiling overhead, and the ledge is two rows above it -- 32px against the
-   * 42px a full jump lifts. The floor from the floor is 48px and out of
-   * reach, which is what keeps the step mandatory. */
-  LEDGEBREAK: {
+   * Two holes, each one tile, opened three tiles ahead of you in turn. The
+   * second arms while you are still in the air over the first, so the honest
+   * big jump off the first hole lands in the second -- the way through is two
+   * small hops, not one confident leap, which is the correction the whole
+   * door is built to teach. */
+  TWO: {
     width: SECTION_W,
-    build(w, s) {
-      w.fill(s.c0 + 7, STAND - 2, 2, 4, '#');    // the wall, floor to STAND-2
-      w.fill(s.c0 + 1, STAND, 3, 1, '#');        // step 1, at body height
-      w.fill(s.c0 + 4, STAND - 2, 2, 1, 'B');    // step 2, dissolving
-      w.set(s.c0 + 6, STAND - 2, '#');           // ...and its solid far end
+    build() {},
+    arm(w, s) {
+      onColumn(w, s.c0, 2, (wl) => { wl.crumbleNow(s.c0 + 3, FLOOR, 1, 1); wl.shakeIt(4); });
+      onColumn(w, s.c0 + 4, 2, (wl) => { wl.crumbleNow(s.c0 + 7, FLOOR, 1, 1); wl.shakeIt(4); });
+    }
+  },
+
+  /* 1-1-3: "This pit moves at you. So you need to jump when it moves."
+   *
+   * The stage everyone remembers, and the only one in the door where standing
+   * still is not merely useless but fatal. The hole starts at the far end and
+   * walks back down the floor at about two thirds of running speed; you are
+   * closing on it at the same time, so the meeting is much sooner than the
+   * distance suggests and the jump has to be taken on the move. */
+  CHASE: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) {
+      onColumn(w, s.c0, 2, (wl) => {
+        wl.msg('oh, it moves.');
+        travellingPit(wl, s.c0 + 8, s.c0 + 1, 2, 9);
+      });
+    }
+  },
+
+  /* 1-1-4: "Jump over the gap and run to the goal."
+   *
+   * The honest one, and every door needs one. A gap that is a gap, visible
+   * from across the room, that does nothing but ask for a jump. Without it
+   * the other four are just noise -- a level where everything lies teaches
+   * nothing, because there is no rule left to break. */
+  GAP: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 4, 2); }
+  },
+
+  /* 1-1-5: "Do the same thing you did for 1-1-4, but it stops halfway, and
+   * another shows up."
+   *
+   * GAP again, and the player has been taught to clear it without thinking.
+   * So while they are over it and falling, the far lip opens too. The answer
+   * is a tile more jump than the identical-looking gap needed, which is only
+   * findable by having been dropped through the difference.
+   *
+   * The extra tile opens at c0+5 rather than further on, and that is a
+   * measurement: the take-off is c0+2 and a full jump covers 5.1 tiles, so
+   * widening to c0+6 would put the far side at exactly the edge of possible
+   * and widening to c0+7 would make the stage a wall. One tile is a lesson;
+   * two would be a lockout. */
+  ENCORE: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 3, 2); },
+    arm(w, s) {
+      w.watch({
+        x: s.c0 + 3, y: FLOOR - 4, w: 3, h: 5,
+        when: (p) => p.vy > 0,
+        run(wl) { wl.crumbleNow(s.c0 + 5, FLOOR, 1, 1); wl.msg('wider than that.'); }
+      });
     }
   }
-});
+};
 
-/* Level 3. The level the escalation grammar was designed on, and the one that
- * teaches the player to distrust their own correct answers. */
-const POINTY_SECTIONS = Object.assign({}, CONNECTORS, {
+/* ------------------------------------------------------------------ *
+ * Door 2 - SPIKES
+ *
+ * Easy in Level Devil, death limit 6, troll counts 1 / 2 / 2 / none / 1. The
+ * fourth stage having no troll at all is the interesting number and it is
+ * preserved here: a door of five traps needs a room where the danger is
+ * exactly what it looks like, or the player stops reading the room and starts
+ * treating every screen as a coin toss.
+ * ------------------------------------------------------------------ */
+const SPIKE_SECTIONS = {
 
-  /* Rung zero, restated for this level: spikes fire, a jump beats them. This
-   * always opens the level, so the habit CEILING punishes is one the level
-   * itself just finished installing. */
-  GREETING: {
+  /* Spikes shoot out of the floor as you come level with them. Honest in the
+   * only sense that matters here -- a jump beats it, nothing counters the
+   * jump, and the door has to establish that before it can punish it. */
+  GROUND: {
     width: SECTION_W,
     build() {},
     arm(w, s) { trapSpikes(w, s.c0 + 6, 2, s.c0 + 1); }
   },
 
-  /* The three-rung chain, in full.
+  /* Two trolls, and the second is aimed at the answer to the first.
    *
-   *   1. a spike, in the same place in the section GREETING puts its spikes,
-   *      so the answer is already known: jump
-   *   2. a block at STAND-3 -- where a full jump peaks and nowhere else -- so
-   *      the confident early jump stops dead in the air and drops you, onto
-   *      the phantom, which is rung 3 arriving early and uninvited
-   *   3. the tile a *minimal* jump lands on, which is exactly what beating
-   *      rung 2 teaches, is a phantom over open air
+   * Spikes come out of the floor, so you jump. Next life you know they are
+   * coming, so you jump early and high -- and a block slams in at the exact
+   * height a full jump peaks at, stopping you dead in the air and dropping
+   * you onto fresh spikes laid under wherever you actually are. The answer is
+   * a half jump, which is a thing you have to be taught by being killed for
+   * the whole one.
    *
-   * The way through is a jump held five to eight frames from c0+4: high enough
-   * to clear the spike, low enough to stay out of STAND-3, and short enough to
-   * come down on c0+6 or c0+7 rather than carrying on into the phantom.
+   * None of it counts deaths: the block fires on what you are doing, so a
+   * player who happens to hop small first time is never punished for a
+   * mistake they did not make. tools/escalate.js asserts the whole band.
    *
-   * The phantom sits three tiles past the spike rather than right behind it,
-   * and the gap between them is not cosmetic. Adjacent, the two read as a
-   * single two-tile hole to anything that can see both -- which a player
-   * cannot, but tools/solver.js can, since it reads the grid. The bot sized
-   * its jump for a two-tile gap, committed to the big arc every time, and the
-   * block killed it on all four variants: the level was provably unsolvable by
-   * the only thing that can prove it, while being perfectly fair to a human.
-   * Spaced out, the visible obstacle is one tile wide for everybody, and the
-   * phantom becomes what it should be -- the punishment for overshooting.
-   *
-   * One spike, not two, and that is the difference between a trap and a wall.
-   * Two tiles of spikes can only be crossed by a jump big enough to reach
-   * STAND-3 -- so an anti-air block over a two-tile field leaves no arc
-   * that beats both, and the section becomes unsolvable while still looking
-   * like a tight skill check. The solver caught it; it would otherwise have
-   * shipped as one of those levels that makes you want to stop playing rather
-   * than want another go, which is the exact failure this level exists to
-   * avoid. A single spike is a small hop, and "hop smaller" is a thing a
-   * player can actually do. */
-  CEILING: {
+   * TWO trolls, and the count is the design. This chain arrived here from the
+   * level it was written for, which had a third rung -- a phantom three tiles
+   * on, so that the corrected smaller jump landed on nothing either -- and
+   * that rung is the difference between a hard door and this one. Level Devil
+   * rates Spikes Easy with a death limit of six and publishes two trolls for
+   * its second stage; three rungs put the fifth section of every variant out
+   * of the solver's reach, because with no checkpoint the third rung has to be
+   * beaten with the whole level already behind you. The rung is good and it is
+   * not gone, it is in the history, and it belongs in a door that is meant to
+   * be hard. */
+  SANDWICH: {
     width: SECTION_W,
-    build(w, s) { w.set(s.c0 + 8, FLOOR, 'F'); },
+    build() {},
     arm(w, s) {
       trapSpikes(w, s.c0 + 5, 1, s.c0 + 1);
       antiAir(w, s.c0 + 3, 5, 'too keen.');
     }
   },
 
-  /* The gap is honest and the far lip is not: it turns phantom while you are
-   * in the air above it, so the jump that was obviously long enough lands on
-   * nothing. Beating it means aiming a whole tile past where you can see you
-   * need to go -- and then landing is not the end of it either. */
-  DROPOUT: {
+  /* A gap, and the lip past it grows spikes while you are in the air above it.
+   * Two trolls: the gap is real and the far side is not safe.
+   *
+   * The spikes stand two tiles clear of the gap rather than on its lip, which
+   * is the same correction LANDING needed: on the lip, the only answer is an
+   * arc that clears the gap AND the spikes in one, and a stage whose single
+   * solution is a maximum-length jump is a skill check wearing a joke's
+   * clothes. Two tiles clear leaves a landing between the two, so the stage
+   * can be beaten by stopping as well as by committing. */
+  PINCER: {
     width: SECTION_W,
-    build(w, s) {
-      pit(w, s.c0 + 4, 2);
-    },
+    build(w, s) { pit(w, s.c0 + 4, 2); },
     arm(w, s) {
       w.watch({
         x: s.c0 + 4, y: FLOOR - 4, w: 3, h: 5,
         when: (p) => p.vy > 0,
-        run(wl) { wl.set(s.c0 + 6, FLOOR, 'F'); }
-      });
-      /* Landing is not resting: the moment you touch down, spikes come up two
-       * tiles ahead. Fired on the landing rather than on a timer after it, on
-       * purpose -- a twenty frame fuse put them under whoever happened to be
-       * running at that speed, which is a coin toss and teaches nothing. Rising
-       * two tiles in front of you is a reaction test you can pass, and it
-       * punishes exactly one thing: landing and sprinting on without looking. */
-      w.watch({
-        x: s.c0 + 7, y: FLOOR - 2, w: 2, h: 3,
-        when: (p) => p.onGround,
-        run(wl) { wl.spikes(s.c0 + 9, STAND, 1, '^'); }
+        run(wl) { wl.spikes(s.c0 + 8, STAND, 1, '^'); }
       });
     }
   },
 
-  /* Two crushers on opposite phases, and the gap between them is the obvious
-   * place to stand and read the rhythm -- so the gap is on a fuse. Ninety
-   * frames of standing in it and spikes come up through your feet. The lesson
-   * is that there is no safe tile, only a correct moment. */
-  PATIENCE: {
+  /* The honest stage. Spikes sitting on the floor, drawn from the start,
+   * doing nothing at all except being where they are. */
+  PLAIN: {
+    width: SECTION_W,
+    build(w, s) { w.fill(s.c0 + 4, STAND, 2, 1, '^'); }
+  },
+
+  /* Spikes where you are going to land rather than where you are. They fire
+   * on the descent, so they cannot be walked into and cannot be seen coming,
+   * and they are aimed at the confident jump: clear the gap and keep going and
+   * they are exactly where you come down.
+   *
+   * They sit three tiles past the gap rather than two, and that gap is the
+   * whole stage. At two, the only safe landing was the single tile between the
+   * pit and the spikes, or a jump at the absolute limit of the arc to get past
+   * them -- so the honest answer to the gap was punished with nowhere to put
+   * your feet, and the solver duly failed variant 1 at column 54 having jumped
+   * the gap correctly. At three there is a two-tile landing zone before the
+   * spikes and they appear far enough ahead to be hopped from a standstill.
+   * The trap still lands on the player who treats the landing as the end of
+   * the jump; it no longer lands on the player who simply jumped. */
+  LANDING: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 3, 2); },
+    arm(w, s) {
+      w.watch({
+        x: s.c0 + 4, y: FLOOR - 5, w: 3, h: 5,
+        when: (p) => p.vy > 0,
+        run(wl) { wl.spikes(s.c0 + 7, STAND, 1, '^'); wl.msg('mind the landing.'); }
+      });
+    }
+  }
+};
+
+/* ------------------------------------------------------------------ *
+ * Door 3 - WALLS
+ *
+ * "The wall moves and blocks the path. It suddenly pops out and does a
+ * peek-a-boo, so you can't let your guard down." Where the first two doors
+ * take the floor away, this one puts something in front of you -- so for the
+ * first time in the game the answer is sometimes to stop, and the door has to
+ * teach that without ever making stopping the safe default.
+ *
+ * Wall heights are not free. Measured against a 42.2px jump from a floor at
+ * row 17: a wall two tiles tall tops out at row 15, a 32px rise, and can be
+ * jumped onto. Three tiles tops out at row 14, a 48px rise, and cannot -- it
+ * is a barrier, not an obstacle. Every wall below is one or the other on
+ * purpose and there is no third case.
+ * ------------------------------------------------------------------ */
+const WALL_SECTIONS = {
+
+  /* A two-tile wall shoots out of the floor in front of you. Jumpable, and
+   * meant to be: this is the door introducing itself, and the only cost of
+   * getting it wrong is stopping. */
+  RISE: {
     width: SECTION_W,
     build() {},
     arm(w, s) {
-      const bottom = FLOOR * TILE - TILE * 2;
-      crusher(w, s.c0 + 2, 2, bottom, 150, 0);
-      crusher(w, s.c0 + 7, 2, bottom, 150, 75);
+      onColumn(w, s.c0 + 1, 2, (wl) => { wl.wall(s.c0 + 5, STAND - 1, 1, 2); });
+    }
+  },
 
-      /* Counted in `when`, which only runs while the player is inside the
-       * box, so this is literally frames spent loitering -- and it survives
-       * leaving and coming back, because coming back is loitering too. */
-      let dwell = 0;
-      w.watch({
-        x: s.c0 + 4, y: FLOOR - 3, w: 3, h: 4,
-        when: (p) => (p.onGround ? ++dwell : dwell) > 90,
-        run(wl) { wl.spikes(s.c0 + 4, STAND, 3, '^'); wl.msg('no loitering.'); }
+  /* The peek-a-boo, and the reason the door is named after it. A three-tile
+   * wall -- too tall to jump, no way over it -- that pops up and drops back
+   * on a cycle, so the stage is not a jump at all. It is standing still and
+   * waiting, in a game that has spent two doors teaching that standing still
+   * is how you die.
+   *
+   * The raise is skipped whenever the player is inside those columns. That is
+   * not mercy, it is the absence of a bug: a wall filled in on top of the
+   * player leaves the collision resolver pushing them out of solid rock in
+   * whichever direction it happens to check first. Skipping costs the trap
+   * nothing, because the player standing there is a player who already got
+   * through. */
+  PEEKABOO: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) {
+      const c = s.c0 + 5;
+      onColumn(w, s.c0, 2, (wl) => {
+        wl.msg('after you.');
+        /* Up thirty frames, down thirty. The first cut was up 32 and down 23,
+         * which is a half-second window to cross a tile that takes seven
+         * frames to cross -- passable, and tight enough that the stage read
+         * as reflex rather than as patience. Even halves make it a rhythm you
+         * can count, which is what the peek-a-boo is for. */
+        for (let i = 0; i < 8; i++) {
+          wl.after(i * 60, (l) => { if (clearOf(l, c, 1)) l.wall(c, STAND - 2, 1, 3); });
+          wl.after(i * 60 + 30, (l) => l.crumbleNow(c, STAND - 2, 1, 3));
+        }
       });
     }
   },
 
-  /* The vertical one. A block six rows tall -- twice what a jump clears -- so
-   * there is no way round it, and three steps up its near side to get over.
-   *
-   * Step two is brittle, so stopping on it to line up step three is the
-   * mistake. The tile you instinctively reach for at the top is a phantom
-   * with nothing but air under it, so the climb has to be finished a tile
-   * longer than it looks.
-   *
-   * The floor under the steps stays solid, and that is not softness. Missing
-   * a step already costs the whole climb -- you land at the bottom and start
-   * again -- and killing for it would turn a recoverable mistake into a death
-   * without adding a single decision. The same reasoning kept spikes out from
-   * under the old staircases, and it matters more here, because the phantom
-   * at the top is *designed* to drop you and has to be survivable to teach
-   * anything at all. */
-  STAIRWELL: {
+  /* Both directions at once. A barrier slams down behind you at the same
+   * moment a jumpable one appears ahead, which costs a player moving forward
+   * precisely nothing and is included anyway, because the sound of a door
+   * closing behind you is most of what this door is for. The one in front is
+   * the actual stage and it is two tiles, like the first one. */
+  BEHIND: {
     width: SECTION_W,
-    build(w, s) {
-      w.fill(s.c0 + 8, STAND - 4, 2, 6, '#');    // the wall, floor to STAND-4
-      w.fill(s.c0 + 1, STAND, 3, 1, '#');        // step 1, at body height
-      w.fill(s.c0 + 4, STAND - 2, 3, 1, 'B');    // step 2, dissolving
-      w.fill(s.c0 + 7, STAND - 4, 1, 1, 'F');    // step 3, not there at all
+    build() {},
+    arm(w, s) {
+      onColumn(w, s.c0 + 4, 2, (wl) => {
+        wl.wall(s.c0 + 1, STAND - 2, 1, 3);
+        wl.wall(s.c0 + 8, STAND - 1, 1, 2);
+      });
+    }
+  },
+
+  /* The honest one: a two-tile wall, drawn from the start, that simply has to
+   * be climbed. */
+  PLAINWALL: {
+    width: SECTION_W,
+    build(w, s) { w.fill(s.c0 + 5, STAND - 1, 1, 2, '#'); }
+  },
+
+  /* A roof rather than a wall, and the inversion the door closes on. A gap in
+   * the floor that obviously wants a jump, and a ceiling that slams in above
+   * it at the height a full jump reaches -- so the jump has to happen and has
+   * to be small. Unlike the block in door 2 you can see this one before you
+   * commit, which is deliberate: it is the same lesson with the death removed,
+   * because a door that ends on an unreactable trap ends on a coin toss.
+   *
+   * The hole is one tile. At two, the only arcs that cross it are the ones the
+   * roof stops, and the stage stops being tight and becomes impossible. */
+  LOWROOF: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 5, 1); },
+    arm(w, s) {
+      onColumn(w, s.c0 + 1, 2, (wl) => { wl.wall(s.c0 + 3, STAND - 3, 5, 1); });
     }
   }
-});
+};
 
 /* Level 13. Everything here is jumpable on sight; the difficulty is that
  * there is a wall of spikes behind you and every hesitation is spent. */
@@ -825,100 +902,83 @@ const TRAIN_SECTIONS = Object.assign({}, CONNECTORS, {
 const LEVELS = [
 
   /* ---------------------------------------------------------------- 1 *
-   * The warm-up teaches one thing: this game wastes your time on purpose.
-   * The door is exactly where it appears to be and it stays there. What the
-   * warm-up teaches is not that the game moves the goalposts -- it does not,
-   * any more -- but the two things every later level is built out of: the
-   * screen is much longer than one jump, and the floor is not evidence.
+   * Level Devil's door 1, transcribed. Five pit stages, in the order the
+   * original teaches them, laid end to end instead of cut apart by a screen
+   * wipe.
    *
-   * Deliberately soft. Three of the four sections cannot kill you at all, so
-   * the one that can lands on a player who has spent forty tiles being told
-   * that flat ground is flat ground. */
+   * GAP always sits fourth and ENCORE always fifth, and that pairing is the
+   * only fixed thing in the level. ENCORE is GAP with the far lip taken away
+   * mid-jump; it means nothing at all unless the player has just cleared the
+   * identical-looking gap without incident, so it cannot be met first and
+   * cannot be met without GAP. Everything before them shuffles. */
   {
-    name: 'WARM UP',
+    name: 'PITS',
     cols: BIG_COLS, rows: BIG_ROWS,
     map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      /* FIRSTLIE always sits last: it is the level's whole point, and a lie
-       * told before the level has established the truth it contradicts is
-       * just a hole in the ground. What varies is the walk up to it. */
-      route(w, WARMUP_SECTIONS, [
-        ['WALK', 'HOP', 'LEDGE', 'FIRSTSPIKE', 'FIRSTLIE'],
-        ['HOP', 'WALK', 'FIRSTSPIKE', 'LEDGE', 'FIRSTLIE'],
-        ['LEDGE', 'FIRSTSPIKE', 'WALK', 'HOP', 'FIRSTLIE'],
-        ['WALK', 'LEDGE', 'HOP', 'FIRSTSPIKE', 'FIRSTLIE']
+      route(w, PIT_SECTIONS, [
+        ['LATE', 'TWO', 'CHASE', 'GAP', 'ENCORE'],
+        ['LATE', 'CHASE', 'TWO', 'GAP', 'ENCORE'],
+        ['TWO', 'LATE', 'CHASE', 'GAP', 'ENCORE'],
+        ['CHASE', 'LATE', 'TWO', 'GAP', 'ENCORE']
       ]);
       w.msg('the door is right there. off you go.', 150);
     }
   },
 
   /* ---------------------------------------------------------------- 2 *
-   * Level 1 taught that the floor is not evidence. Level 2 answers the
-   * obvious next question -- "then how am I supposed to know?" -- with the
-   * cracked tile, which is the game being scrupulously honest about where the
-   * ground is going to fail, and then arranging four reasons why honesty does
-   * not help.
+   * Door 2. The floor stops opening and starts growing teeth.
    *
-   * BREATHER is the punchline and always runs last, for the same reason
-   * FIRSTLIE does in level 1: an inverted rule is only funny once the rule is
-   * installed, and a clean tile among cracked ones means nothing to a player
-   * who has not yet learned to read cracks. CRUST always runs first and
-   * installs it. What varies is the argument in between.
-   *
-   * Three of the four variants carry only one real fight between the two
-   * ends. That is the bounded-difficulty rule doing its job at the place it
-   * matters most: this is the second level in the game, and a player who is
-   * still learning that the floor lies should not also be learning to ration
-   * their momentum across three hazards in a row. */
+   * GROUND opens every variant and that is load-bearing rather than tidy:
+   * its spikes are honest and a jump beats them, so by the time SANDWICH
+   * presents the same spikes a dozen tiles later, "jump, and jump early" is a
+   * habit the level installed itself -- which is the only reason the block at
+   * the apex is funny instead of arbitrary. PLAIN is the door's honest stage
+   * and floats, because a room that turns out to mean exactly what it says is
+   * a better surprise when you cannot predict which room it will be. */
   {
-    name: 'TRUST ISSUES',
+    name: 'SPIKES',
     cols: BIG_COLS, rows: BIG_ROWS,
     map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      route(w, TRUST_SECTIONS, [
-        ['CRUST', 'HOP', 'TEETER', 'WALK', 'BREATHER'],
-        ['CRUST', 'LEDGEBREAK', 'WALK', 'HOP', 'BREATHER'],
-        ['CRUST', 'TEETER', 'LEDGE', 'LEDGEBREAK', 'BREATHER'],
-        ['CRUST', 'WALK', 'LEDGEBREAK', 'HOP', 'BREATHER']
+      route(w, SPIKE_SECTIONS, [
+        ['GROUND', 'PLAIN', 'SANDWICH', 'PINCER', 'LANDING'],
+        ['GROUND', 'SANDWICH', 'PINCER', 'PLAIN', 'LANDING'],
+        ['GROUND', 'PINCER', 'PLAIN', 'LANDING', 'SANDWICH'],
+        ['GROUND', 'PLAIN', 'LANDING', 'SANDWICH', 'PINCER']
       ]);
-      w.msg('the floor is only mostly real', 150);
+      w.msg('the floor has opinions now', 150);
     }
   },
 
-  /* ---------------------------------------------------------------- 3 */
+  /* ---------------------------------------------------------------- 3 *
+   * Door 3. Two doors of the ground vanishing, and now the game starts
+   * putting things in the way instead -- which means that for the first time
+   * the right answer is sometimes to stop, in a game that has spent two
+   * levels proving that stopping is how you die.
+   *
+   * RISE opens every variant, because it is the only stage that introduces a
+   * wall without also demanding something of the player, and PEEKABOO is
+   * unreadable without it. LOWROOF always closes: it is the door's inversion
+   * -- the wall arrives above you rather than in front -- and it lands as a
+   * joke only after three stages of walls arriving in front. */
   {
-    name: 'POINTY',
+    name: 'WALLS',
     cols: BIG_COLS, rows: BIG_ROWS,
     map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      /* GREETING opens every route, and that is load-bearing rather than
-       * tidy. Its spikes are honest and a jump beats them, so by the time
-       * CEILING presents the identical spikes twelve tiles later, "jump, and
-       * jump early" is a habit the level installed itself -- which is the
-       * only reason the block at STAND-3 is funny instead of arbitrary.
-       *
-       * After that the order is genuinely shuffled, because the sections
-       * teach contradictory things (DROPOUT says jump further, CEILING says
-       * jump smaller, PATIENCE says do not jump yet) and meeting them in a
-       * different order is a different level. */
-      /* No WALK in here. An empty section is a fine joke in the warm-up, where
-       * the point is that the screen is longer than you expected; in a level
-       * with real traps it just leaves ten tiles of blank floor, and since
-       * CEILING's spike, block and phantom are all sprung or invisible, a
-       * route of WALKs renders as an empty room. Every connector POINTY uses
-       * puts something on the screen. */
-      route(w, POINTY_SECTIONS, [
-        ['GREETING', 'LEDGE', 'CEILING', 'HOP', 'DROPOUT'],
-        ['GREETING', 'HOP', 'DROPOUT', 'LEDGE', 'CEILING'],
-        ['GREETING', 'LEDGE', 'PATIENCE', 'HOP', 'CEILING'],
-        ['GREETING', 'HOP', 'STAIRWELL', 'LEDGE', 'CEILING']
+      route(w, WALL_SECTIONS, [
+        ['RISE', 'PLAINWALL', 'PEEKABOO', 'BEHIND', 'LOWROOF'],
+        ['RISE', 'PEEKABOO', 'PLAINWALL', 'BEHIND', 'LOWROOF'],
+        ['RISE', 'BEHIND', 'PLAINWALL', 'PEEKABOO', 'LOWROOF'],
+        ['RISE', 'PLAINWALL', 'BEHIND', 'PEEKABOO', 'LOWROOF']
       ]);
+      w.msg('mind the walls', 150);
     }
   },
-
   /* ---------------------------------------------------------------- 4 */
   {
     name: 'THE SHORTCUT',
