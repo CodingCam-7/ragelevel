@@ -6,23 +6,35 @@
 
 const TILE = 16;
 
-/* The default level size, and the size the menu screens are laid out for.
- * Levels may declare their own `cols`/`rows`; a route is 64x18. */
+/* The WINDOW, in tiles: how much of the world is visible at once, and the size
+ * of the canvas. This is fixed for the whole game -- menus, map levels and
+ * routes alike -- and it is the thing that makes a tile the same size on screen
+ * everywhere.
+ *
+ * A level is not required to be this size. `def.cols`/`def.rows` may declare a
+ * bigger world -- a route is 64x18, twice the window -- and the camera scrolls
+ * it behind the window instead of shrinking it to fit. A level that is exactly
+ * the window size never scrolls at all, because the camera clamps to the
+ * world's edges and there is nowhere for it to go. */
 const COLS = 32;
 const ROWS = 18;
+const VW = COLS * TILE;   // 512
+const VH = ROWS * TILE;   // 288
 
-/* The *current* viewport in pixels, not a constant: Render.setViewport swaps
- * it when the game moves between a menu and a level, or between levels of
- * different sizes. Everything that draws or clamps against the edge of the
- * screen reads these, so a level twice as wide needs no other change. */
-let VW = COLS * TILE;
-let VH = ROWS * TILE;
+/* How fast the camera closes the gap to where it wants to be, per frame.
+ *
+ * At maxRun the camera settles about `maxRun / CAM_EASE` pixels behind the
+ * player -- a tile at these numbers -- which is enough to feel like weight and
+ * far too little to hide anything. Snapping instead (1.0) is legible but jerks
+ * on every landing; easing much slower swims, and swimming is unforgivable in
+ * a game where a trap is answered in three frames. */
+const CAM_EASE = 0.15;
 
 /* Window space left around the canvas so it never sits flush against the edge,
- * and the floor under Render.fit's scale. A route needs 1024 native pixels of
- * width, so on a narrow window the scale goes below 1 rather than clipping the
- * far half of the level; MIN_SCALE only stops it reaching zero on a window too
- * small to play in regardless. */
+ * and the floor under Render.fit's scale. The canvas is 512x288, so on a window
+ * narrower than that the scale goes below 1 rather than clipping the level;
+ * MIN_SCALE only stops it reaching zero on a window too small to play in
+ * regardless. */
 const MARGIN = 16;
 const MIN_SCALE = 0.15;
 

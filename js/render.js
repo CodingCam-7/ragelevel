@@ -3,56 +3,73 @@
 const Render = {
   ctx: null,
   canvas: null,
-  cols: COLS,
-  rows: ROWS,
 
-  /* Whole-pixel size of one canvas pixel on screen, and how many extra pixels
-   * per font pixel the text gets to compensate for it. A 64-wide route needs a
-   * canvas twice as wide as a menu, so on the same window it is drawn at half
-   * the scale -- which silently halves the size of every word. One extra pixel
-   * per font pixel restores 5x7 body text to the size it had on a menu; it is
-   * added rather than multiplied so that headline text, which is already big
-   * enough to survive the shrink, grows gently and the stacked lines of the
-   * death and pause overlays keep clear of each other. */
+  /* Whole-pixel size of one canvas pixel on screen. */
   scale: 1,
-  textBoost: 0,
+
+  /**
+   * The camera: which pixel of the world sits in the window's top-left corner.
+   *
+   * The canvas is always VW x VH and a tile is always TILE pixels, so a route
+   * is not drawn smaller than a menu -- it is drawn through a window the same
+   * size, with the level moving behind it. Everything the world draws is in
+   * world pixels; `frame` translates by this once and every drawing routine
+   * below stays ignorant of it.
+   */
+  cam: { x: 0, y: 0 },
+  camSnap: true,
 
   init(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false });
+    canvas.width = VW;
+    canvas.height = VH;
     this.ctx.imageSmoothingEnabled = false;
-    this.setViewport(COLS, ROWS);
-    /* setViewport short-circuits when the grid is already the one asked for,
-     * and index.html ships the canvas at the default size -- so on the very
-     * first call it returns before fitting anything, and the canvas would sit
-     * at its intrinsic 512x288 until the first level of a different size
-     * changed it. Fit once here, unconditionally. */
     this.fit();
   },
 
   /**
-   * Resize the drawing surface to a level's grid. Menus are laid out for the
-   * default 32x18; a route is 64x18 and gets a canvas twice as wide, which is
-   * what "zoomed out" means here -- the whole level is on screen at once,
-   * drawn at native 16px tiles, and `fit` picks the scale that fills the
-   * window. No camera, no scrolling.
+   * Put the camera where it should be for this frame.
    *
-   * Idempotent, because draw() calls it every frame: assigning canvas.width
-   * clears the surface and resets the context, so doing it needlessly would
-   * wipe the frame that is being drawn.
+   * The player is centred, and the result clamped so the window never shows
+   * anything outside the level. Both halves matter. Centring means sixteen
+   * tiles of warning in the direction you are going, which on a screen this
+   * size is more than any trap in the game needs; clamping means the first
+   * and last sections of a route are framed exactly as a 32-wide level would
+   * be, so walking to the door does not drift into empty space.
+   *
+   * A level no bigger than the window has nowhere to scroll -- the clamp
+   * collapses to zero -- so every map level draws pixel-identically to how it
+   * drew before there was a camera. tools/viewport.js asserts that.
+   *
+   * Deliberately centred rather than led. A lookahead camera that pushes
+   * forward in the direction of travel shows more of what is coming and is
+   * the usual choice, but this game inverts left and right on level 12 and
+   * flips gravity on level 10, and a camera that lunges when the controls
+   * betray you turns one joke into motion sickness. Sixteen tiles is enough.
+   *
+   * `camSnap` is set on entering a level and on respawning, because easing
+   * from wherever the camera happened to be is a half-second of the level
+   * sliding past before the player may move -- and on a death that slide is
+   * backwards over the ground that just killed them.
    */
-  setViewport(cols, rows) {
-    if (cols === this.cols && rows === this.rows && this.canvas.width) return;
-    this.cols = cols;
-    this.rows = rows;
-    VW = cols * TILE;
-    VH = rows * TILE;
-    this.canvas.width = VW;
-    this.canvas.height = VH;
-    this.ctx.imageSmoothingEnabled = false;
-    this.textBoost = Math.max(0, Math.round(cols / COLS) - 1);
-    this.fit();
+  follow(w) {
+    const p = w.player;
+    const tx = clamp(p.x + p.w / 2 - VW / 2, 0, Math.max(0, w.cols * TILE - VW));
+    const ty = clamp(p.y + p.h / 2 - VH / 2, 0, Math.max(0, w.rows * TILE - VH));
+
+    if (this.camSnap) {
+      this.cam.x = tx;
+      this.cam.y = ty;
+      this.camSnap = false;
+    } else {
+      this.cam.x += (tx - this.cam.x) * CAM_EASE;
+      this.cam.y += (ty - this.cam.y) * CAM_EASE;
+    }
   },
+
+  /** Next frame, put the camera straight where it belongs with no glide. */
+  snap() { this.camSnap = true; },
 
   /**
    * Window space the canvas cannot have: the border it is drawn inside, plus
@@ -80,16 +97,14 @@ const Render = {
   },
 
   /**
-   * Largest scale that shows the whole level.
+   * Largest scale that shows the whole canvas.
    *
    * Whole pixels while there is room for them -- that is what keeps the art
    * crisp, and on any ordinary desktop it is what happens. Below 1:1 we scale
-   * fractionally instead of clamping, which matters the moment a 64-wide route
-   * replaces a 32-wide menu: a route is 1024 native pixels across, so on a
-   * narrower window an integer-only scale bottoms out at 1 and the level is
-   * *clipped* -- the body is `overflow: hidden`, so the right-hand sections
-   * and the door are simply not on screen. Nearest-neighbour at 0.8 is a
-   * little uneven; a trap you cannot see is not a trap.
+   * fractionally instead of clamping at 1, because `body` is `overflow:
+   * hidden`: a canvas wider than the window is not scrolled, it is cut off,
+   * and what disappears is the right-hand edge of the screen. Nearest-neighbour
+   * at 0.8 is a little uneven; half a level you cannot see is worse.
    */
   fit() {
     const c = this.chrome();
@@ -103,14 +118,11 @@ const Render = {
 
   /* ---------------- text -------------------------------------------- */
 
-  /** The scale a caller's `scale` actually draws at on the current grid. */
-  fontScale(scale) { return (scale || 1) + this.textBoost; },
-
   /** scale is in whole pixels per font pixel: 1 = 5x7, 2 = 10x14, ...
-   *  plus `textBoost`, so a word stays legible on a grid drawn small. Font.draw
-   *  centres a line on y, so text grows about its anchor and stays put. */
+   *  The window is one size now, so a word is one size: no boost, no rescaling
+   *  per level, and the HUD on a route reads exactly as it does on a menu. */
   text(str, x, y, color, scale, align, shadow) {
-    scale = this.fontScale(scale);
+    scale = scale || 1;
     if (shadow !== false) {
       Font.draw(this.ctx, str, x + scale, y + scale, '#000000', scale, align);
     }
@@ -120,7 +132,7 @@ const Render = {
   /** Fully outlined - stays readable on top of white blocks. */
   textOutlined(str, x, y, color, scale, align) {
     const ctx = this.ctx;
-    scale = this.fontScale(scale);
+    scale = scale || 1;
     for (let dx = -scale; dx <= scale; dx += scale) {
       for (let dy = -scale; dy <= scale; dy += scale) {
         if (dx || dy) Font.draw(ctx, str, x + dx, y + dy, '#000000', scale, align);
@@ -135,9 +147,16 @@ const Render = {
     const ctx = this.ctx;
     ctx.fillStyle = PAL.bg;
     ctx.fillRect(0, 0, VW, VH);
+
+    /* The dots scroll with the world rather than sitting still on the glass.
+     * They are the only thing on a bare stretch of a route that shows the
+     * level moving at all -- with them pinned to the canvas, running across
+     * an empty section reads as the player jogging on the spot. */
     ctx.fillStyle = PAL.grid;
-    for (let y = 0; y < VH; y += TILE) {
-      for (let x = 0; x < VW; x += TILE) ctx.fillRect(x, y, 1, 1);
+    const ox = -(Math.round(this.cam.x) % TILE);
+    const oy = -(Math.round(this.cam.y) % TILE);
+    for (let y = oy; y < VH; y += TILE) {
+      for (let x = ox; x < VW; x += TILE) ctx.fillRect(x, y, 1, 1);
     }
   },
 
@@ -199,8 +218,17 @@ const Render = {
 
   tiles(w) {
     const ctx = this.ctx;
-    for (let r = 0; r < w.rows; r++) {
-      for (let c = 0; c < w.cols; c++) {
+    /* Only the columns the window can see. A route is twice the window, so
+     * half of every frame's tile loop was drawing off-canvas; the cull is a
+     * tile wider than it needs to be on each side so a block scrolling in at
+     * the edge is never half-missing. */
+    const c0 = Math.max(0, Math.floor(this.cam.x / TILE) - 1);
+    const c1 = Math.min(w.cols - 1, Math.ceil((this.cam.x + VW) / TILE) + 1);
+    const r0 = Math.max(0, Math.floor(this.cam.y / TILE) - 1);
+    const r1 = Math.min(w.rows - 1, Math.ceil((this.cam.y + VH) / TILE) + 1);
+
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
         const ch = w.grid[r][c];
         if (ch === ' ') continue;
 
@@ -374,8 +402,12 @@ const Render = {
     if (w.dark <= 0.01) return;
     const ctx = this.ctx;
     const p = w.player;
-    const cx = Math.round((p.x + p.w / 2) / 4) * 4;
-    const cy = Math.round((p.y + p.h / 2) / 4) * 4;
+    /* The light is a hole cut in a screen-space cover, so the player's world
+     * position has to come back through the camera first. Without this the
+     * hole sits where the player would have been on an unscrolled level, which
+     * on a route means lighting a piece of wall the player is nowhere near. */
+    const cx = Math.round((p.x + p.w / 2 - this.cam.x) / 4) * 4;
+    const cy = Math.round((p.y + p.h / 2 - this.cam.y) / 4) * 4;
     const R = 46;
 
     ctx.save();
@@ -406,13 +438,12 @@ const Render = {
     if (w.message) {
       // Sits under the HUD: platforms live in the lower rows, so anywhere
       // near the floor would cover level geometry on some level or other.
-      // The plate is measured from the scale the text will really draw at,
-      // which is bigger than 1 on a wide grid -- hardcoding 13px tall used to
-      // leave the words hanging out of their own background.
+      // The plate is measured from the font rather than hardcoded, which is
+      // what stops the words hanging out of their own background when a
+      // message is longer or the glyph metrics change.
       const ctx = this.ctx;
-      const fs = this.fontScale(1);
-      const bw = Font.width(w.message.text, fs) + 12;
-      const bh = Font.height(fs) + 6;
+      const bw = Font.width(w.message.text, 1) + 12;
+      const bh = Font.height(1) + 6;
       ctx.globalAlpha = w.message.life < 16 ? w.message.life / 16 : 1;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(Math.round(VW / 2 - bw / 2), Math.round(29 - bh / 2), bw, bh);
@@ -425,13 +456,24 @@ const Render = {
 
   frame(w, game) {
     const ctx = this.ctx;
+    this.follow(w);
     this.background();
 
+    /* Three transforms, and the order is the whole of it. Shake is a nudge of
+     * the finished picture, so it goes on first and applies to everything.
+     * Mirror flips the *window*, which is what level 12 means by swapping left
+     * and right -- so it is expressed in window coordinates and must sit
+     * outside the camera. The camera translate goes last, and from here down
+     * every draw call is in plain world pixels.
+     *
+     * Nothing after the restore may use the camera: the HUD, the darkness
+     * cover and the damage flash are painted on the glass, not in the world. */
     ctx.save();
     if (w.shake > 0) {
       ctx.translate(rndi(-w.shake, w.shake) | 0, rndi(-w.shake, w.shake) | 0);
     }
     if (w.mirror) { ctx.translate(VW, 0); ctx.scale(-1, 1); }
+    ctx.translate(-Math.round(this.cam.x), -Math.round(this.cam.y));
 
     this.tiles(w);
     this.fallingTiles(w);

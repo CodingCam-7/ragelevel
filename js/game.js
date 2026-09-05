@@ -91,6 +91,7 @@ const Game = {
     this.levelIndex = index;
     this.levelDeaths = 0;
     this.world = new World(LEVELS[index], this);
+    Render.snap();                      // frame the start, do not glide to it
     this.state = 'intro';
     this.introT = 62;
     if (index > this.unlocked) { this.unlocked = index; this.save(); }
@@ -113,7 +114,8 @@ const Game = {
 
   retry() {
     this.world.reset();
-    this.state = 'play';
+    Render.snap();                      // or the level slides backwards over
+    this.state = 'play';                // the ground that just killed you
   },
 
   /* ---------------- menus --------------------------------------------- *
@@ -308,14 +310,6 @@ const Game = {
   /* ---------------- draw --------------------------------------------- */
 
   draw() {
-    /* Menus are laid out for the default screen; a level gets a canvas the
-     * size of its own grid. Done here rather than on the state change so no
-     * transition can be missed -- setViewport is a no-op when nothing moved. */
-    const inLevel = this.world &&
-      this.state !== 'title' && this.state !== 'settings' && this.state !== 'win';
-    if (inLevel) Render.setViewport(this.world.cols, this.world.rows);
-    else Render.setViewport(COLS, ROWS);
-
     switch (this.state) {
       case 'title':    this.drawTitle(); break;
       case 'settings': this.drawSettings(); break;

@@ -201,15 +201,23 @@ function nextLeg(w) {
  * crossing is the first crossing with the scenery rearranged -- the player is
  * not going anywhere, they are being made to wait.
  *
- * A route is the honest version. The screen is 64 tiles wide and 24 tall,
- * drawn at the same 16px tiles and shown all at once, so a level has room to
- * be a journey in the ordinary sense of the word: you start on the left, you
- * arrive on the right, and everything in between is somewhere you have not
- * been yet. The door does not move. There is one door and you reach it once.
+ * A route is the honest version. The level is 64 tiles wide and 18 tall --
+ * twice the width of the window, the same height -- so it has room to be a
+ * journey in the ordinary sense of the word: you start on the left, you arrive
+ * on the right, and everything in between is somewhere you have not been yet.
+ * The door does not move. There is one door and you reach it once.
+ *
+ * You see half of it at a time. The window is 32x18 whatever the level is, and
+ * the camera scrolls the level behind it -- so a tile on a route is the same
+ * size on screen as a tile on level 4, and about sixteen tiles of what is
+ * coming are visible at any moment. That is more warning than any trap in the
+ * game needs and less than a map of the level, which is the right trade: the
+ * lie was never marked anyway, and a route you cannot survey from the spawn
+ * point is a route you have to walk into.
  *
  * The level is laid out as SECTIONS placed left to right. A section is one
- * self-contained fight about twelve tiles wide, and it owns both its geometry
- * and its traps. Which sections a level uses, and in what order, is chosen by
+ * self-contained fight SECTION_W (10) tiles wide, and it owns both its
+ * geometry and its traps. Which sections a level uses, and in what order, is chosen by
  * the variant -- from a list of prepared orderings, never assembled at random,
  * for the same reason the old variants were hand-authored: every arrangement a
  * player can meet has been proven beatable by tools/solver.js.

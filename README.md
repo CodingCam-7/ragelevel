@@ -98,10 +98,11 @@ crossing with the furniture moved. The player was not going anywhere; they were
 being made to wait.
 
 **Routes** are the honest version, and levels 1, 2, 3 and 13 are built out of
-them. The screen for a route level is **64 tiles wide** and the same 18 tall,
-drawn at the same 16px tiles and shown all at once — so you see the whole level
-and still cannot see which tile is lying. A level is laid out as **sections**,
-each about ten tiles of self-contained fight, placed left to right:
+them. A route level is **64 tiles wide** and the same 18 tall — twice the width
+of the window — and the camera scrolls it behind the window as you go, so you
+see about half of it at a time and never find out which tile is lying until you
+stand on it. A level is laid out as **sections**, each ten tiles of
+self-contained fight, placed left to right:
 
 ```js
 route(w, POINTY_SECTIONS, [
@@ -128,27 +129,46 @@ thick. That is not decoration: a thicker floor needs the rows under a phantom
 tile carved away, and a carved-out substrate is a notch in the ground visible
 from across the level, pointing straight at the tile about to betray you.
 
-### Fitting on the screen
+### The window
 
-There is no camera. The whole level is on screen or the level is broken, so the
-canvas is resized to whatever grid is up — 512x288 for a menu or an old level,
-1024x288 for a route — and `Render.fit` picks a scale for it.
+The canvas is **512x288 — 32x18 tiles — always**, for menus, map levels and
+routes alike, and `Render.fit` scales it up to the browser window. A tile is
+therefore the same size on screen everywhere in the game, which is the whole
+point of doing it this way.
 
-Whole-pixel scales while there is room for them, which on any ordinary desktop
-is what happens, and is what keeps the art crisp. Below 1:1 the scale goes
-fractional instead of stopping at 1. That case is not exotic: a route is 1024
-pixels wide, so every window narrower than that hits it, and the alternative is
-worse than slightly uneven pixels. `body` is `overflow: hidden`, so a canvas
-wider than the window is not scrolled — it is cut off, quietly, and the piece
-that disappears is the right-hand end with the door on it.
+A level is not obliged to be that size. `def.cols`/`def.rows` may declare a
+bigger world and the camera scrolls it behind the window: you are looking
+through a window at the level, not at a smaller picture of it. A level that is
+exactly window-sized never scrolls at all, because the camera clamps to the
+world's edges and there is nowhere for it to go — so the eleven map levels draw
+exactly as they did before there was a camera, and `tools/viewport.js` asserts
+it.
 
-The one thing that genuinely does not survive being drawn at half scale is
-5x7 text: seven real pixels of HUD is a smudge. So `Render.textBoost` gives
-every glyph an extra pixel per font pixel on a grid twice as wide, which is
-exactly what the canvas lost. It is added rather than multiplied on purpose —
-body text needs the whole doubling, but headline text is already big enough to
-survive the shrink, and doubling *that* would push the stacked lines of the
-death and pause overlays into each other.
+This replaced the opposite arrangement, where the canvas grew to the level's
+size — 1024x288 for a route — and the browser shrank it to fit. That kept the
+whole level on screen, and the cost was that a route was drawn at *half scale*:
+same level, half-size player, and 5x7 HUD text rendered into seven real pixels
+of smudge. There was a `textBoost` to give the glyphs their pixels back. It is
+gone, along with the need for it.
+
+The camera centres the player and clamps to the level, and it is deliberately
+**not** a lookahead camera. Pushing the view forward in the direction of travel
+shows more of what is coming and is the usual choice — but this game inverts
+left and right on level 12 and flips gravity on level 10, and a camera that
+lunges when the controls betray you turns one joke into motion sickness.
+Sixteen tiles of warning is plenty.
+
+It eases rather than snaps (`CAM_EASE`, 0.15/frame), settling about a tile
+behind the player at full run — enough to feel like weight, far too little to
+hide anything. It *does* snap on entering a level and on respawning, because
+easing from wherever the camera happened to be means half a second of the level
+sliding past before you may move, and on a death that slide is backwards over
+the ground that just killed you.
+
+Below 1:1 the scale goes fractional rather than stopping at 1. `body` is
+`overflow: hidden`, so a canvas wider than the window is not scrolled — it is
+cut off, quietly. Nearest-neighbour at 0.8 is a little uneven; a piece of the
+screen you cannot see is worse.
 
 ## How the traps escalate
 
@@ -242,13 +262,13 @@ js/
   audio.js    WebAudio square-wave synth (no asset files)
   world.js    tile grid, player physics, movers, triggers, hazards
   levels.js   all fourteen level definitions
-  render.js   all drawing
+  render.js   all drawing, and the camera
   game.js     state machine, main loop, boot
 tools/
   check.sh    runs every check below; non-zero exit if any fail
   harness.js  smoke test + invisibility audit
   jump.js     measures the jump arc the route traps are built on
-  viewport.js proves both grids fit on screen at any window size
+  viewport.js proves the canvas always fits and the camera stays in the level
   escalate.js proves level 3's trap chain still escalates
   solver.js   greedy bot, proves levels 1-13 completable
   finale.js   route-following bot for level 14

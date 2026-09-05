@@ -27,8 +27,9 @@ cd "$(dirname "$0")"
 # a full jump and a tapped one closes, every anti-air trap in levels.js is
 # either unavoidable or inert, and the solver would only tell you afterwards
 # and in a much more confusing way. viewport third: it is about what reaches
-# the screen rather than what the physics does, and a level nobody can see all
-# of is not worth solving.
+# the screen rather than what the physics does, and it is the only check that
+# knows the camera exists -- a level the window never scrolls to the end of is
+# not worth solving.
 CHECKS=${*:-"harness jump viewport escalate solver finale dark crusher"}
 
 failed=""
