@@ -23,6 +23,10 @@ body {
 
 #game {
   display: block;
+  /* Not border-box: the JS sets style.width to an exact multiple of the
+     bitmap's width, and under border-box the 2px frame would eat into that,
+     leaving a fractional scale and softened pixels on every screen. */
+  box-sizing: content-box;
   background: #12121c;
   border: 2px solid #26263c;
   image-rendering: pixelated;
@@ -45,4 +49,17 @@ body {
 #hint b {
   color: #cfcfe4;
   font-weight: 600;
+}
+
+/* On a small window the canvas has already given up whole-pixel scaling to
+   stay fully visible; every line the hint bar wraps to is another line it
+   takes away from the level, so shrink it out of the way. */
+@media (max-width: 640px), (max-height: 560px) {
+  #wrap { gap: 8px; }
+  #hint { font-size: 10px; gap: 3px 12px; }
+}
+
+@media (max-height: 420px) {
+  #wrap { gap: 6px; }
+  #hint { display: none; }
 }

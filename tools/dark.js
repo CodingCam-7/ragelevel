@@ -70,7 +70,7 @@ function sighted(trigger, lag) {
     for (var dx = 2; dx <= LIGHT_R; dx += 2) {
       var edge = dir > 0 ? p.x + p.w + dx : p.x - dx;
       var c = Math.floor(edge / TILE);
-      if (c >= COLS || c < 0) break;
+      if (c >= w.cols || c < 0) break;
       if (isSpikeChar(w.at(c, bodyRow)) ||
           isSolidChar(w.at(c, bodyRow)) ||
           !isSolidChar(w.at(c, footRow))) { danger = dx; break; }

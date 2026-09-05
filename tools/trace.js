@@ -12,7 +12,7 @@ var LV = (args[0] ? parseInt(args[0], 10) : 3) - 1;
 var VAR = args[1] ? parseInt(args[1], 10) : 0;
 World.forceVariant = VAR;
 
-function rowStr(w, r){ var s=''; for(var c=0;c<COLS;c++){ var ch=w.grid[r][c]; s+=(ch===' '?'.':ch); } return s; }
+function rowStr(w, r){ var s=''; for(var c=0;c<w.cols;c++){ var ch=w.grid[r][c]; s+=(ch===' '?'.':ch); } return s; }
 
 var w=new World(LEVELS[LV],Game); Game.world=w; Game.state='play'; Game.levelDeaths=0;
 print('L'+(LV+1)+' '+LEVELS[LV].name+'  variant '+VAR+

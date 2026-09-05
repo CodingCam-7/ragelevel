@@ -9,37 +9,49 @@ class World {
   constructor(def, game) {
     this.def = def;
     this.game = game;
-    this.reset();
-  }
 
-  reset() {
-    const def = this.def;
+    /* Levels declare their own grid; the default is the old single screen.
+     * Fixed for the life of the World, since the canvas is sized from it. */
+    this.cols = def.cols || COLS;
+    this.rows = def.rows || ROWS;
 
-    if (def.map.length !== ROWS) {
-      console.error(`Level "${def.name}": expected ${ROWS} rows, got ${def.map.length}`);
-    }
-
-    /* Re-rolled on every death, which is the point: a level with variants
-     * cannot be beaten by memorising one run, because the run you memorised
-     * is not necessarily the one you get next. Every variant is authored by
-     * hand and proven beatable, so this stays unpredictable without becoming
-     * unfair -- the dice choose between prepared levels, never build one.
+    /* Rolled ONCE, here, and held across every reset() this World sees --
+     * which means across every death, because dying calls reset() rather than
+     * building a new World. That is deliberate and it is the whole basis of
+     * the escalation design: "next time I will jump earlier" is only a lesson
+     * if next time is the same level. Re-rolling the layout on death, which
+     * this used to do, meant no route could ever be learned, so the traps read
+     * as arbitrary difficulty instead of as a joke being played on you.
      *
-     * World.forceVariant lets the checks pin a specific variant so each can
-     * be verified on its own; the game itself never sets it. */
+     * Variety comes back at the level boundary: entering a level builds a new
+     * World, so a replay -- or the next full playthrough -- rolls again.
+     *
+     * World.forceVariant lets the checks pin a specific variant so each can be
+     * verified on its own; the game itself never sets it. */
     const nVariants = def.variants || 1;
     this.variant = World.forceVariant !== null
       ? ((World.forceVariant % nVariants) + nVariants) % nVariants
       : Math.floor(Math.random() * nVariants);
 
-    this.grid = [];
-    let spawn = { c: 2, r: ROWS - 3 };
-    let doorAt = { c: COLS - 4, r: ROWS - 3 };
+    this.reset();
+  }
 
-    for (let r = 0; r < ROWS; r++) {
-      const src = (def.map[r] || '').padEnd(COLS, ' ');
-      const row = new Array(COLS);
-      for (let c = 0; c < COLS; c++) {
+  reset() {
+    const def = this.def;
+    const COLS_ = this.cols, ROWS_ = this.rows;
+
+    if (def.map.length !== ROWS_) {
+      console.error(`Level "${def.name}": expected ${ROWS_} rows, got ${def.map.length}`);
+    }
+
+    this.grid = [];
+    let spawn = { c: 2, r: ROWS_ - 3 };
+    let doorAt = { c: COLS_ - 4, r: ROWS_ - 3 };
+
+    for (let r = 0; r < ROWS_; r++) {
+      const src = (def.map[r] || '').padEnd(COLS_, ' ');
+      const row = new Array(COLS_);
+      for (let c = 0; c < COLS_; c++) {
         const ch = src[c];
         if (ch === 'P') { spawn = { c, r }; row[c] = ' '; }
         else if (ch === 'D') { doorAt = { c, r }; row[c] = ' '; }
@@ -80,12 +92,7 @@ class World {
     this.stung = Object.create(null);   // phantom tiles already sounded off this life
     this.falling = [];                  // phantom tiles currently dropping away
 
-    this.triggers = (def.triggers || []).map((t) => ({
-      x: t.x, y: t.y, w: t.w, h: t.h,
-      once: t.once !== false,
-      run: t.run,
-      fired: false
-    }));
+    this.triggers = (def.triggers || []).map((t) => World.trigger(t));
 
     this.gravDir = 1;
     this.mirror = false;
@@ -105,13 +112,28 @@ class World {
 
   /* ---------------- authoring API used by level definitions ---------- */
 
+  /**
+   * Move the spawn point. Levels built from a map literal mark it with 'P';
+   * a level whose geometry is assembled in init() has no literal to mark, so
+   * it says where the player starts once the floor exists.
+   */
+  spawnAt(c, r) {
+    this.spawn = { c, r };
+    const p = this.player;
+    p.x = c * TILE + (TILE - PW) / 2;
+    p.y = r * TILE + (TILE - PH);
+    p.vx = 0;
+    p.vy = 0;
+    p.onGround = false;
+  }
+
   at(c, r) {
-    if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return '#';
+    if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) return '#';
     return this.grid[r][c];
   }
 
   set(c, r, ch) {
-    if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
+    if (c < 0 || c >= this.cols || r < 0 || r >= this.rows) return;
     this.grid[r][c] = ch;
   }
 
@@ -180,8 +202,41 @@ class World {
   }
 
   doorBy(dc, dr) {
-    this.door.x = clamp(this.door.x + dc * TILE, 0, VW - this.door.w);
-    this.door.y = clamp(this.door.y + dr * TILE, 0, VH - this.door.h);
+    this.door.x = clamp(this.door.x + dc * TILE, 0, this.cols * TILE - this.door.w);
+    this.door.y = clamp(this.door.y + dr * TILE, 0, this.rows * TILE - this.door.h);
+  }
+
+  /**
+   * Arm a trap that watches for something the player *does*, rather than for a
+   * column they walk past. This is the mechanism the traps escalate on.
+   *
+   * A plain zone trigger can only say "when you get here". That produces one
+   * betrayal per spot, and once you know where the spot is the level is over.
+   * A watch adds `when` -- an arbitrary test on the player -- so the counter to
+   * a trap can be aimed at the *answer* to it:
+   *
+   *   spikes fire at the player's feet          -> the answer is to jump
+   *   `when: airborne above head height` puts    -> the answer is a smaller jump
+   *     a block where a full jump peaks
+   *   `when: near the apex, still rising`        -> ... and so on
+   *
+   * Nothing here counts deaths. A trap fires because of what you are doing at
+   * the moment it fires, which means it lands the same way on the player who
+   * works it out on the second try as on the one who takes thirty -- and a
+   * player who happens to do the right thing first time is never punished for
+   * a mistake they did not make.
+   *
+   * Watches are added during init(), so reset() clears them with everything
+   * else and every trap re-arms on death.
+   */
+  watch(opts) {
+    this.triggers.push(World.trigger(opts));
+  }
+
+  /** Is the player rising/falling through the band `top`..`bot` (tile rows)? */
+  inBand(top, bot) {
+    const p = this.player;
+    return p.y + p.h > top * TILE && p.y < (bot + 1) * TILE;
   }
 
   mover(opts) {
@@ -249,8 +304,8 @@ class World {
 
     for (let r = r0; r <= r1; r++) {
       for (let c = c0; c <= c1; c++) {
-        if (r < 0 || r >= ROWS) continue;          // no ceiling/floor outside the map
-        if (c < 0 || c >= COLS) {
+        if (r < 0 || r >= this.rows) continue;     // no ceiling/floor outside the map
+        if (c < 0 || c >= this.cols) {
           out.push({ x: c * TILE, y: r * TILE, w: TILE, h: TILE });   // walls at the edges
           continue;
         }
@@ -308,10 +363,12 @@ class World {
     const p = this.player;
     for (const tr of this.triggers) {
       if (tr.once && tr.fired) continue;
-      if (aabb(p.x, p.y, p.w, p.h, tr.x * TILE, tr.y * TILE, tr.w * TILE, tr.h * TILE)) {
-        tr.fired = true;
-        tr.run(this);
-      }
+      if (tr.cool > 0) { tr.cool--; continue; }
+      if (!aabb(p.x, p.y, p.w, p.h, tr.x * TILE, tr.y * TILE, tr.w * TILE, tr.h * TILE)) continue;
+      if (tr.when && !tr.when(p, this)) continue;
+      tr.fired = true;
+      tr.cool = tr.cooldown;
+      tr.run(this);
     }
   }
 
@@ -364,7 +421,7 @@ class World {
       else continue;
       p.vx = 0;
     }
-    p.x = clamp(p.x, 0, VW - p.w);
+    p.x = clamp(p.x, 0, this.cols * TILE - p.w);
 
     // ---- move + resolve Y ----
     const wasFalling = p.vy * g > 0;
@@ -395,7 +452,7 @@ class World {
     if (p.squashT > 0) p.squashT--;
 
     // ---- out of bounds ----
-    if (p.y > VH + 32 || p.y < -48) this.kill('fell');
+    if (p.y > this.rows * TILE + 32 || p.y < -48) this.kill('fell');
   }
 
   updateMovers() {
@@ -490,7 +547,7 @@ class World {
       f.vy += PHYS.gravity * 0.6;   // lighter than the player: it trails you down
       f.y += f.vy * f.dir;
       f.life++;
-      if (f.life > PHANTOM_FALL_LIFE || f.y < -TILE * 2 || f.y > ROWS * TILE + TILE * 2) {
+      if (f.life > PHANTOM_FALL_LIFE || f.y < -TILE * 2 || f.y > this.rows * TILE + TILE * 2) {
         this.falling.splice(i, 1);
       }
     }
@@ -521,8 +578,8 @@ class World {
     const r0 = Math.floor(p.y / TILE) - 1;
     const r1 = Math.floor((p.y + p.h) / TILE) + 1;
 
-    for (let r = Math.max(0, r0); r <= Math.min(ROWS - 1, r1); r++) {
-      for (let c = Math.max(0, c0); c <= Math.min(COLS - 1, c1); c++) {
+    for (let r = Math.max(0, r0); r <= Math.min(this.rows - 1, r1); r++) {
+      for (let c = Math.max(0, c0); c <= Math.min(this.cols - 1, c1); c++) {
         const ch = this.grid[r][c];
 
         if (isSpikeChar(ch)) {
@@ -569,6 +626,17 @@ class World {
 }
 
 World._scratch = [];
+
+/** Normalise a trigger/watch spec. Zone is in tile units; `when` is optional. */
+World.trigger = (t) => ({
+  x: t.x, y: t.y, w: t.w, h: t.h,
+  once: t.once !== false,
+  when: t.when || null,
+  cooldown: t.cooldown || 0,
+  cool: 0,
+  run: t.run,
+  fired: false
+});
 
 /* null = roll a fresh variant each life (how the game plays). The headless
  * checks set this to pin one variant at a time so every one gets proven. */

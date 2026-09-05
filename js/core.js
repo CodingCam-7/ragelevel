@@ -5,10 +5,26 @@
  * ------------------------------------------------------------------ */
 
 const TILE = 16;
+
+/* The default level size, and the size the menu screens are laid out for.
+ * Levels may declare their own `cols`/`rows`; a route is 64x18. */
 const COLS = 32;
 const ROWS = 18;
-const VW = COLS * TILE;   // 512
-const VH = ROWS * TILE;   // 288
+
+/* The *current* viewport in pixels, not a constant: Render.setViewport swaps
+ * it when the game moves between a menu and a level, or between levels of
+ * different sizes. Everything that draws or clamps against the edge of the
+ * screen reads these, so a level twice as wide needs no other change. */
+let VW = COLS * TILE;
+let VH = ROWS * TILE;
+
+/* Window space left around the canvas so it never sits flush against the edge,
+ * and the floor under Render.fit's scale. A route needs 1024 native pixels of
+ * width, so on a narrow window the scale goes below 1 rather than clipping the
+ * far half of the level; MIN_SCALE only stops it reaching zero on a window too
+ * small to play in regardless. */
+const MARGIN = 16;
+const MIN_SCALE = 0.15;
 
 const STEP = 1000 / 60;   // fixed timestep, ms
 
@@ -108,17 +124,28 @@ const FULL = rep('#', COLS);
  *   place({ 0: rep('#', 8), 8: 'F', 21: rep('#', 11) })
  * Far less error-prone than counting spaces in a literal.
  */
-function place(spec, fill) {
-  const a = new Array(COLS).fill(fill || ' ');
+function placeIn(cols, spec, fill) {
+  const a = new Array(cols).fill(fill || ' ');
   for (const key in spec) {
     const start = +key;
     const s = spec[key];
     for (let i = 0; i < s.length; i++) {
       const c = start + i;
-      if (c >= 0 && c < COLS) a[c] = s[i];
+      if (c >= 0 && c < cols) a[c] = s[i];
     }
   }
   return a.join('');
+}
+
+function place(spec, fill) { return placeIn(COLS, spec, fill); }
+
+/**
+ * An empty grid of the given size. Big levels do not author their geometry as
+ * map literals at all -- a route builds it in init(), which reruns on every
+ * death -- so their `map` is only ever a blank canvas of the right shape.
+ */
+function blank(cols, rows) {
+  return Array(rows).fill(rep(' ', cols));
 }
 
 /* ------------------------------------------------------------------ *

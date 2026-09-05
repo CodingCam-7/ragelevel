@@ -2,17 +2,115 @@
 
 const Render = {
   ctx: null,
+  canvas: null,
+  cols: COLS,
+  rows: ROWS,
 
-  init(ctx) {
-    this.ctx = ctx;
-    ctx.imageSmoothingEnabled = false;
+  /* Whole-pixel size of one canvas pixel on screen, and how many extra pixels
+   * per font pixel the text gets to compensate for it. A 64-wide route needs a
+   * canvas twice as wide as a menu, so on the same window it is drawn at half
+   * the scale -- which silently halves the size of every word. One extra pixel
+   * per font pixel restores 5x7 body text to the size it had on a menu; it is
+   * added rather than multiplied so that headline text, which is already big
+   * enough to survive the shrink, grows gently and the stacked lines of the
+   * death and pause overlays keep clear of each other. */
+  scale: 1,
+  textBoost: 0,
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.ctx.imageSmoothingEnabled = false;
+    this.setViewport(COLS, ROWS);
+    /* setViewport short-circuits when the grid is already the one asked for,
+     * and index.html ships the canvas at the default size -- so on the very
+     * first call it returns before fitting anything, and the canvas would sit
+     * at its intrinsic 512x288 until the first level of a different size
+     * changed it. Fit once here, unconditionally. */
+    this.fit();
+  },
+
+  /**
+   * Resize the drawing surface to a level's grid. Menus are laid out for the
+   * default 32x18; a route is 64x18 and gets a canvas twice as wide, which is
+   * what "zoomed out" means here -- the whole level is on screen at once,
+   * drawn at native 16px tiles, and `fit` picks the scale that fills the
+   * window. No camera, no scrolling.
+   *
+   * Idempotent, because draw() calls it every frame: assigning canvas.width
+   * clears the surface and resets the context, so doing it needlessly would
+   * wipe the frame that is being drawn.
+   */
+  setViewport(cols, rows) {
+    if (cols === this.cols && rows === this.rows && this.canvas.width) return;
+    this.cols = cols;
+    this.rows = rows;
+    VW = cols * TILE;
+    VH = rows * TILE;
+    this.canvas.width = VW;
+    this.canvas.height = VH;
+    this.ctx.imageSmoothingEnabled = false;
+    this.textBoost = Math.max(0, Math.round(cols / COLS) - 1);
+    this.fit();
+  },
+
+  /**
+   * Window space the canvas cannot have: the border it is drawn inside, plus
+   * the hint bar under it. Measured rather than assumed a fraction of the
+   * window, because the hint wraps to two or three lines on a narrow one and
+   * a guess that is wrong by a line pushes the canvas off the bottom of a
+   * body that is `overflow: hidden`.
+   *
+   * The headless checks stub the DOM and have no layout at all; they get a
+   * plain margin, since there is no window there to fit into anyway.
+   */
+  chrome() {
+    if (typeof getComputedStyle !== 'function' || !this.canvas.getBoundingClientRect) {
+      return { x: MARGIN, y: MARGIN };
+    }
+    const border = 2 * (parseFloat(getComputedStyle(this.canvas).borderLeftWidth) || 0);
+    let below = 0;
+    const hint = document.getElementById('hint');
+    if (hint && hint.getBoundingClientRect) {
+      below = hint.getBoundingClientRect().height;
+      const wrap = document.getElementById('wrap');
+      if (wrap) below += parseFloat(getComputedStyle(wrap).rowGap) || 0;
+    }
+    return { x: border + MARGIN, y: border + below + MARGIN };
+  },
+
+  /**
+   * Largest scale that shows the whole level.
+   *
+   * Whole pixels while there is room for them -- that is what keeps the art
+   * crisp, and on any ordinary desktop it is what happens. Below 1:1 we scale
+   * fractionally instead of clamping, which matters the moment a 64-wide route
+   * replaces a 32-wide menu: a route is 1024 native pixels across, so on a
+   * narrower window an integer-only scale bottoms out at 1 and the level is
+   * *clipped* -- the body is `overflow: hidden`, so the right-hand sections
+   * and the door are simply not on screen. Nearest-neighbour at 0.8 is a
+   * little uneven; a trap you cannot see is not a trap.
+   */
+  fit() {
+    const c = this.chrome();
+    const availW = Math.max(MARGIN, innerWidth - c.x);
+    const availH = Math.max(MARGIN, innerHeight - c.y);
+    const raw = Math.min(availW / VW, availH / VH);
+    this.scale = raw >= 1 ? Math.floor(raw) : Math.max(raw, MIN_SCALE);
+    this.canvas.style.width = Math.round(VW * this.scale) + 'px';
+    this.canvas.style.height = Math.round(VH * this.scale) + 'px';
   },
 
   /* ---------------- text -------------------------------------------- */
 
-  /** scale is in whole pixels per font pixel: 1 = 5x7, 2 = 10x14, ... */
+  /** The scale a caller's `scale` actually draws at on the current grid. */
+  fontScale(scale) { return (scale || 1) + this.textBoost; },
+
+  /** scale is in whole pixels per font pixel: 1 = 5x7, 2 = 10x14, ...
+   *  plus `textBoost`, so a word stays legible on a grid drawn small. Font.draw
+   *  centres a line on y, so text grows about its anchor and stays put. */
   text(str, x, y, color, scale, align, shadow) {
-    scale = scale || 1;
+    scale = this.fontScale(scale);
     if (shadow !== false) {
       Font.draw(this.ctx, str, x + scale, y + scale, '#000000', scale, align);
     }
@@ -22,7 +120,7 @@ const Render = {
   /** Fully outlined - stays readable on top of white blocks. */
   textOutlined(str, x, y, color, scale, align) {
     const ctx = this.ctx;
-    scale = scale || 1;
+    scale = this.fontScale(scale);
     for (let dx = -scale; dx <= scale; dx += scale) {
       for (let dy = -scale; dy <= scale; dy += scale) {
         if (dx || dy) Font.draw(ctx, str, x + dx, y + dy, '#000000', scale, align);
@@ -101,8 +199,8 @@ const Render = {
 
   tiles(w) {
     const ctx = this.ctx;
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < w.rows; r++) {
+      for (let c = 0; c < w.cols; c++) {
         const ch = w.grid[r][c];
         if (ch === ' ') continue;
 
@@ -308,11 +406,16 @@ const Render = {
     if (w.message) {
       // Sits under the HUD: platforms live in the lower rows, so anywhere
       // near the floor would cover level geometry on some level or other.
+      // The plate is measured from the scale the text will really draw at,
+      // which is bigger than 1 on a wide grid -- hardcoding 13px tall used to
+      // leave the words hanging out of their own background.
       const ctx = this.ctx;
-      const bw = Font.width(w.message.text, 1) + 12;
+      const fs = this.fontScale(1);
+      const bw = Font.width(w.message.text, fs) + 12;
+      const bh = Font.height(fs) + 6;
       ctx.globalAlpha = w.message.life < 16 ? w.message.life / 16 : 1;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(Math.round(VW / 2 - bw / 2), 22, bw, 13);
+      ctx.fillRect(Math.round(VW / 2 - bw / 2), Math.round(29 - bh / 2), bw, bh);
       this.textOutlined(w.message.text, VW / 2, 29, PAL.text, 1, 'center');
       ctx.globalAlpha = 1;
     }

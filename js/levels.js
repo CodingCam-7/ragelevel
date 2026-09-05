@@ -100,7 +100,7 @@ function rammer(w, row) {
   Sfx.tone(150, 0.26, 'sawtooth', 0.055, 70);
   Sfx.noise(0.18, 0.045);
   return w.mover({
-    x: VW,                 // just off the right edge, so it slides into view
+    x: w.cols * TILE,      // just off the right edge, so it slides into view
     y: row * TILE,
     w: RAM_WIDE * TILE,
     h: TILE,
@@ -166,7 +166,7 @@ function stairTo(w, D, fromRight) {
 
 /** Erase a climb again, so the next leg does not inherit last leg's scaffolding. */
 function clearAir(w, topRow, bottomRow) {
-  w.refill(0, topRow, COLS, bottomRow - topRow + 1, ' ');
+  w.refill(0, topRow, w.cols, bottomRow - topRow + 1, ' ');
 }
 
 function journey(w, stops) {
@@ -193,73 +193,504 @@ function nextLeg(w) {
   if (s.arm) w.after(s.delay || 22, s.arm);
 }
 
+/* ------------------------------------------------------------------ *
+ * Routes: levels that are actually long
+ *
+ * A journey (above) makes a level last by sending you back across the same
+ * 32 tiles three times. It works, and it is tedious, because the second
+ * crossing is the first crossing with the scenery rearranged -- the player is
+ * not going anywhere, they are being made to wait.
+ *
+ * A route is the honest version. The screen is 64 tiles wide and 24 tall,
+ * drawn at the same 16px tiles and shown all at once, so a level has room to
+ * be a journey in the ordinary sense of the word: you start on the left, you
+ * arrive on the right, and everything in between is somewhere you have not
+ * been yet. The door does not move. There is one door and you reach it once.
+ *
+ * The level is laid out as SECTIONS placed left to right. A section is one
+ * self-contained fight about twelve tiles wide, and it owns both its geometry
+ * and its traps. Which sections a level uses, and in what order, is chosen by
+ * the variant -- from a list of prepared orderings, never assembled at random,
+ * for the same reason the old variants were hand-authored: every arrangement a
+ * player can meet has been proven beatable by tools/solver.js.
+ *
+ * ------------------------------------------------------------------ *
+ * How the traps escalate
+ *
+ * A section is not one trap, it is a trap and its answer's punishment. The
+ * grammar, which every section follows:
+ *
+ *   1. something kills you, and the obvious response is the right one
+ *   2. the obvious response is itself trapped, and the counter is aimed at
+ *      exactly the thing step 1 taught you to do
+ *   3. the refinement that beats step 2 has its own landing covered
+ *
+ * The canonical shape, which `antiAir` below exists for: spikes shoot out of
+ * the floor, so you jump. Next life you know they are coming and jump early
+ * and high -- and a block slams in at the exact height a full jump peaks at,
+ * so you stop dead in the air and drop onto the spikes you were clearing. The
+ * answer is a *half* jump, which is a thing you have to be taught by being
+ * killed for the whole one.
+ *
+ * The important part is that none of this counts your deaths. Every step is a
+ * `watch` on what the player is doing at that moment (see World.watch), so the
+ * level is the same level on your fortieth try as your first. It is not
+ * getting harder because you are failing; you are being punished for the
+ * conclusion you drew, and the conclusion was reasonable, and that is the joke.
+ *
+ * ------------------------------------------------------------------ *
+ * Geometry, all of it measured by tools/jump.js rather than derived
+ *
+ *   floor surface        row 17 (FLOOR, the bottom row); player stands in 16
+ *   full jump            42.2px up, head reaches row 13, 5.1 tiles across
+ *   tapped jump          14.5px up, head reaches row 15
+ *   the useful gap       a block at row 13 stops a full jump dead and leaves
+ *                        a held-for-six-frames jump (row 14) untouched
+ *
+ * Those three rows -- 13, 14, 15, i.e. STAND-3, STAND-2 and STAND-1 -- are the
+ * whole vocabulary of the ceiling traps, and they are only two rows apart. Change any jump constant in PHYS
+ * and rerun tools/jump.js before touching a section, because a level built on
+ * a 4-row window quietly becomes impossible on a 3-row one.
+ * ------------------------------------------------------------------ */
+
+/* Twice as wide as the original screen and exactly as tall. The width is the
+ * whole point -- it is what lets a level be a route rather than a corridor
+ * walked three times -- and the height is unchanged because nothing wanted
+ * more of it: the tallest thing any section builds is a four-row climb, and a
+ * 24-row screen spent fifteen rows on empty sky above the action. */
+const BIG_COLS = 64;
+const BIG_ROWS = 18;
+
+/* The floor is the bottom row of the screen and it is exactly one tile thick.
+ *
+ * That is not a decorative choice, it is what keeps phantoms honest. A thicker
+ * floor needs the rows underneath a fake tile carved away, or falling through
+ * one just drops you onto the substrate -- and a carved-out substrate is a
+ * notch in the ground visible from across the level, pointing straight at the
+ * tile that is about to betray you. The rule everywhere else in this game is
+ * that an 'F' is pixel-identical to a '#'; a one-tile floor with nothing under
+ * it anywhere is the only version of a route level where that stays true.
+ *
+ * It also makes a pit a pit: there is no floor below the floor, so anything
+ * that opens in it drops you off the bottom of the world. */
+const FLOOR = BIG_ROWS - 1;
+const STAND = FLOOR - 1;   // the row the player's body occupies on that floor
+
+/* Where the first section starts, and the space between sections. The run-in
+ * matters: a trap three tiles from a standing start has to be answered before
+ * there is any speed to answer it with. */
+const ROUTE_START = 4;
+const ROUTE_GAP = 1;
+
+/** Open the ground. The floor is one tile, so this is the whole of it. */
+function pit(w, c, n) { w.clear(c, FLOOR, n, 1); }
+
+/**
+ * The counter to jumping.
+ *
+ * Fires only when the player is rising through STAND-3 -- the row a full jump
+ * reaches and a smaller one does not -- inside the given columns. Jump high and
+ * it happens; jump low and it does not exist.
+ *
+ * It does two things at once, and it needs both. The block alone is not a trap:
+ * a lid dropped at the apex stops you rising, but your horizontal speed is
+ * untouched and the fall from apex is short, so you land within half a tile of
+ * where you were going to land anyway and stroll off unharmed. Measured, not
+ * assumed -- the first version of this fired perfectly and killed nobody.
+ *
+ * So the floor you are about to come down on gets spikes, placed under wherever
+ * you actually are rather than at a fixed column, because the whole point is
+ * that it is aimed at you. You hit a ceiling that was not there, and land on a
+ * floor that has changed while you were in the air.
+ *
+ * That is unreactable, once. It is meant to be: the lesson is not "dodge this",
+ * it is "do not take that jump here", and you get a whole life to learn it. The
+ * jump that beats it -- hold it about eight frames instead of twenty -- never
+ * touches STAND-3, so nothing fires at all, and the player who happens to jump
+ * small on their first try is never punished for a mistake they did not make.
+ */
+function antiAir(w, c, n, msg) {
+  w.watch({
+    x: c, y: STAND - 3, w: n, h: 1,
+    when: (p) => p.vy < 0,
+    run(wl) {
+      const p = wl.player;
+      const under = Math.floor((p.x + p.w / 2) / TILE) - 1;
+      wl.wall(c, STAND - 3, n, 1);
+      wl.spikes(under, STAND, 3, '^');
+      if (msg) wl.msg(msg);
+    }
+  });
+}
+
+/** Spikes that fire out of the floor when the player comes level with them. */
+function trapSpikes(w, at, n, from) {
+  w.watch({
+    x: from, y: FLOOR - 3, w: at - from, h: 4,
+    run(wl) { wl.spikes(at, STAND, n, '^'); }
+  });
+}
+
+/**
+ * Lay a level out as a route. `orders` is one prepared list of section names
+ * per variant; `pool` is the level's sections by name.
+ */
+function route(w, pool, orders) {
+  const names = orders[w.variant % orders.length];
+
+  w.fill(0, FLOOR, w.cols, 1, '#');
+  w.spawnAt(2, STAND);
+
+  let c = ROUTE_START;
+  const placed = [];
+
+  for (const name of names) {
+    const sec = pool[name];
+    if (!sec) { console.error(`Level "${w.def.name}": no section named "${name}"`); continue; }
+    const s = { name, c0: c, c1: c + sec.width - 1, floor: FLOOR };
+    if (s.c1 >= w.cols - 3) {
+      console.error(`Level "${w.def.name}": section "${name}" runs off the screen at ${s.c1}`);
+    }
+    sec.build(w, s);
+    placed.push(s);
+    c = s.c1 + 1 + ROUTE_GAP;
+  }
+
+  /* One door, at the end, and it is real. Nothing in a route is a fake door:
+   * that machinery exists to move a door mid-level, which is the thing routes
+   * were built to stop doing. */
+  w.doorTo(Math.min(w.cols - 3, c + 1), STAND);
+  w.door.fake = false;
+  w.door.hidden = false;
+
+  /* Traps arm only once every section's geometry is down, so a watch can be
+   * placed against the tiles as they finally are rather than as they were
+   * before the next section carved a pit through them. */
+  for (const s of placed) {
+    const sec = pool[s.name];
+    if (sec.arm) sec.arm(w, s);
+  }
+
+  w.sections = placed;
+  return placed;
+}
+
+/* ------------------------------------------------------------------ *
+ * Section pools
+ *
+ * Every section is SECTION_W tiles wide, which is what lets five of them fit
+ * on one screen with a run-in and a run-out.
+ *
+ * Five was the target, not four -- but not because five makes the level
+ * longer, and it is worth being exact about that because the obvious claim is
+ * false. Measured against the three-leg journeys these replaced, a five-section
+ * route is the same length or shorter on the optimal line:
+ *
+ *   L1   journey 381-504f   ->   route 384-480f
+ *   L3   journey 521-599f   ->   route 388-494f
+ *   L13  journey 434-473f   ->   route 391-436f
+ *
+ * A journey bought its frame count partly with dead time -- the teleport beat,
+ * the armed-after-a-delay pause, and a walk back over floor already crossed --
+ * and the solver spends those frames whether or not anything is happening. A
+ * route has none of that, so the same wall-clock is all new ground.
+ *
+ * So the count is about density, not duration: five fights in 64 tiles is one
+ * every two seconds of running, and none of them is a repeat. The time a real
+ * player spends is not the optimum anyway -- it is the optimum plus every
+ * replay of sections 1-3 bought by dying in section 4, which is where four
+ * sections and five genuinely differ.
+ *
+ * All coordinates inside a section are written relative to s.c0, its left
+ * column, so a section is placeable anywhere in any order. Nothing may reach
+ * past c0 + SECTION_W - 1 into its neighbour.
+ * ------------------------------------------------------------------ */
+
+const SECTION_W = 10;
+
+/* Connective tissue, shared by every route.
+ *
+ * A route is not five fights, and learning that was the expensive part. Five
+ * escalating traps in a row with no checkpoint means beating the fifth
+ * requires replaying the other four cleanly, so the cost of one mistake in the
+ * last section is the whole level -- and the solver duly reported POINTY as
+ * unbeatable on three variants out of four while every individual section was
+ * fair. That is the failure mode this game most needs to avoid: not "hard",
+ * but "hard in a way that makes the retry expensive", which is what turns a
+ * player from irritated into finished.
+ *
+ * So a route is one signature trap, one or two lesser ones, and the rest of
+ * the screen is these -- ground that costs a jump and nothing else. They are
+ * what makes the level long without making it punishing, and they give the
+ * signature trap somewhere to sit that is not immediately after another one. */
+const CONNECTORS = {
+
+  /* Nothing at all, and it is the first joke in the game: the screen is twice
+   * as wide as it needs to be and some of it is just walking. */
+  WALK: {
+    width: SECTION_W,
+    build() {}
+  },
+
+  /* An honest gap. Every level needs one true thing so the lies have something
+   * to be measured against. */
+  HOP: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 4, 2); }
+  },
+
+  /* An honest wall at body height, so getting over it puts you on top of it.
+   * This is the shape every staircase in the game is built from, taught once
+   * where falling off costs nothing. */
+  LEDGE: {
+    width: SECTION_W,
+    build(w, s) { w.fill(s.c0 + 5, STAND, 1, 1, '#'); }
+  }
+};
+
+/* Level 1. The traps are soft on purpose -- level 1 teaches the grammar of
+ * the rest of the game and should be maddening rather than punishing -- but
+ * the shape is already the real shape: you walk right, the ground is longer
+ * than you expected, and exactly one thing about it is a lie. */
+const WARMUP_SECTIONS = Object.assign({}, CONNECTORS, {
+
+  /* The first spikes in the game, and they behave exactly as spikes should:
+   * they announce themselves, they are jumpable, nothing counters the jump. */
+  FIRSTSPIKE: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) { trapSpikes(w, s.c0 + 6, 2, s.c0 + 1); }
+  },
+
+  /* And the lesson. A flat, plain, boring stretch of floor with one tile in
+   * it that is not floor. Nothing marks it, nothing ever will, and the level
+   * has spent fifty tiles establishing that flat floor is flat floor. */
+  FIRSTLIE: {
+    width: SECTION_W,
+    build(w, s) { w.set(s.c0 + 5, FLOOR, 'F'); },
+    arm(w, s) {
+      w.watch({
+        x: s.c0 + 6, y: FLOOR - 3, w: 4, h: 4,
+        run(wl) { wl.msg('the floor was the trap.'); }
+      });
+    }
+  }
+});
+
+/* Level 3. The level the escalation grammar was designed on, and the one that
+ * teaches the player to distrust their own correct answers. */
+const POINTY_SECTIONS = Object.assign({}, CONNECTORS, {
+
+  /* Rung zero, restated for this level: spikes fire, a jump beats them. This
+   * always opens the level, so the habit CEILING punishes is one the level
+   * itself just finished installing. */
+  GREETING: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) { trapSpikes(w, s.c0 + 6, 2, s.c0 + 1); }
+  },
+
+  /* The three-rung chain, in full.
+   *
+   *   1. a spike, in the same place in the section GREETING puts its spikes,
+   *      so the answer is already known: jump
+   *   2. a block at STAND-3 -- where a full jump peaks and nowhere else -- so
+   *      the confident early jump stops dead in the air and drops you, onto
+   *      the phantom, which is rung 3 arriving early and uninvited
+   *   3. the tile a *minimal* jump lands on, which is exactly what beating
+   *      rung 2 teaches, is a phantom over open air
+   *
+   * The way through is a jump held five to eight frames from c0+4: high enough
+   * to clear the spike, low enough to stay out of STAND-3, and short enough to
+   * come down on c0+6 or c0+7 rather than carrying on into the phantom.
+   *
+   * The phantom sits three tiles past the spike rather than right behind it,
+   * and the gap between them is not cosmetic. Adjacent, the two read as a
+   * single two-tile hole to anything that can see both -- which a player
+   * cannot, but tools/solver.js can, since it reads the grid. The bot sized
+   * its jump for a two-tile gap, committed to the big arc every time, and the
+   * block killed it on all four variants: the level was provably unsolvable by
+   * the only thing that can prove it, while being perfectly fair to a human.
+   * Spaced out, the visible obstacle is one tile wide for everybody, and the
+   * phantom becomes what it should be -- the punishment for overshooting.
+   *
+   * One spike, not two, and that is the difference between a trap and a wall.
+   * Two tiles of spikes can only be crossed by a jump big enough to reach
+   * STAND-3 -- so an anti-air block over a two-tile field leaves no arc
+   * that beats both, and the section becomes unsolvable while still looking
+   * like a tight skill check. The solver caught it; it would otherwise have
+   * shipped as one of those levels that makes you want to stop playing rather
+   * than want another go, which is the exact failure this level exists to
+   * avoid. A single spike is a small hop, and "hop smaller" is a thing a
+   * player can actually do. */
+  CEILING: {
+    width: SECTION_W,
+    build(w, s) { w.set(s.c0 + 8, FLOOR, 'F'); },
+    arm(w, s) {
+      trapSpikes(w, s.c0 + 5, 1, s.c0 + 1);
+      antiAir(w, s.c0 + 3, 5, 'too keen.');
+    }
+  },
+
+  /* The gap is honest and the far lip is not: it turns phantom while you are
+   * in the air above it, so the jump that was obviously long enough lands on
+   * nothing. Beating it means aiming a whole tile past where you can see you
+   * need to go -- and then landing is not the end of it either. */
+  DROPOUT: {
+    width: SECTION_W,
+    build(w, s) {
+      pit(w, s.c0 + 4, 2);
+    },
+    arm(w, s) {
+      w.watch({
+        x: s.c0 + 4, y: FLOOR - 4, w: 3, h: 5,
+        when: (p) => p.vy > 0,
+        run(wl) { wl.set(s.c0 + 6, FLOOR, 'F'); }
+      });
+      /* Landing is not resting: the moment you touch down, spikes come up two
+       * tiles ahead. Fired on the landing rather than on a timer after it, on
+       * purpose -- a twenty frame fuse put them under whoever happened to be
+       * running at that speed, which is a coin toss and teaches nothing. Rising
+       * two tiles in front of you is a reaction test you can pass, and it
+       * punishes exactly one thing: landing and sprinting on without looking. */
+      w.watch({
+        x: s.c0 + 7, y: FLOOR - 2, w: 2, h: 3,
+        when: (p) => p.onGround,
+        run(wl) { wl.spikes(s.c0 + 9, STAND, 1, '^'); }
+      });
+    }
+  },
+
+  /* Two crushers on opposite phases, and the gap between them is the obvious
+   * place to stand and read the rhythm -- so the gap is on a fuse. Ninety
+   * frames of standing in it and spikes come up through your feet. The lesson
+   * is that there is no safe tile, only a correct moment. */
+  PATIENCE: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) {
+      const bottom = FLOOR * TILE - TILE * 2;
+      crusher(w, s.c0 + 2, 2, bottom, 150, 0);
+      crusher(w, s.c0 + 7, 2, bottom, 150, 75);
+
+      /* Counted in `when`, which only runs while the player is inside the
+       * box, so this is literally frames spent loitering -- and it survives
+       * leaving and coming back, because coming back is loitering too. */
+      let dwell = 0;
+      w.watch({
+        x: s.c0 + 4, y: FLOOR - 3, w: 3, h: 4,
+        when: (p) => (p.onGround ? ++dwell : dwell) > 90,
+        run(wl) { wl.spikes(s.c0 + 4, STAND, 3, '^'); wl.msg('no loitering.'); }
+      });
+    }
+  },
+
+  /* The vertical one. A block six rows tall -- twice what a jump clears -- so
+   * there is no way round it, and three steps up its near side to get over.
+   *
+   * Step two is brittle, so stopping on it to line up step three is the
+   * mistake. The tile you instinctively reach for at the top is a phantom
+   * with nothing but air under it, so the climb has to be finished a tile
+   * longer than it looks.
+   *
+   * The floor under the steps stays solid, and that is not softness. Missing
+   * a step already costs the whole climb -- you land at the bottom and start
+   * again -- and killing for it would turn a recoverable mistake into a death
+   * without adding a single decision. The same reasoning kept spikes out from
+   * under the old staircases, and it matters more here, because the phantom
+   * at the top is *designed* to drop you and has to be survivable to teach
+   * anything at all. */
+  STAIRWELL: {
+    width: SECTION_W,
+    build(w, s) {
+      w.fill(s.c0 + 8, STAND - 4, 2, 6, '#');    // the wall, floor to STAND-4
+      w.fill(s.c0 + 1, STAND, 3, 1, '#');        // step 1, at body height
+      w.fill(s.c0 + 4, STAND - 2, 3, 1, 'B');    // step 2, dissolving
+      w.fill(s.c0 + 7, STAND - 4, 1, 1, 'F');    // step 3, not there at all
+    }
+  }
+});
+
+/* Level 13. Everything here is jumpable on sight; the difficulty is that
+ * there is a wall of spikes behind you and every hesitation is spent. */
+const TRAIN_SECTIONS = Object.assign({}, CONNECTORS, {
+
+  /* A block at body height. Costs one jump, and one jump costs 35 frames. */
+  HURDLE: {
+    width: SECTION_W,
+    build(w, s) { w.fill(s.c0 + 4, STAND - 1, 1, 2, '#'); }
+  },
+
+  /* An honest hole, wide enough that it has to be taken at speed. */
+  GAP: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 4, 3); }
+  },
+
+  /* Two holes far enough apart that they cannot be cleared in one jump, so
+   * the run has to be broken twice in five tiles. */
+  NARROW: {
+    width: SECTION_W,
+    build(w, s) { pit(w, s.c0 + 3, 1); pit(w, s.c0 + 7, 1); }
+  },
+
+  /* Two spikes far enough apart to need two separate jumps. */
+  TEETH: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) {
+      trapSpikes(w, s.c0 + 3, 1, s.c0);
+      trapSpikes(w, s.c0 + 7, 1, s.c0 + 4);
+    }
+  },
+
+  /* The anti-air lesson, drawn rather than sprung. A roof at the row a full
+   * jump's head reaches, over a hole you have no choice but to jump: the jump
+   * has to happen and it has to be small, and unlike CEILING you can see that
+   * before you commit. With a train closing, a rule you have to die to learn
+   * is one death too many.
+   *
+   * The hole is one tile, not two. At two the only arcs that cross it are the
+   * ones the roof stops, so the section had no solution at all -- it read as a
+   * tight skill check and was in fact a wall. One tile leaves a wide band of
+   * jumps that clear the hole and stay under the roof. */
+  LID: {
+    width: SECTION_W,
+    build(w, s) {
+      pit(w, s.c0 + 5, 1);
+      w.fill(s.c0 + 3, STAND - 3, 5, 1, '#');
+    }
+  }
+});
+
 const LEVELS = [
 
   /* ---------------------------------------------------------------- 1 *
    * The warm-up teaches one thing: this game wastes your time on purpose.
-   * The door is never where you are going, and the cost of chasing it is
-   * paid in walking rather than in deaths -- level 1 should be maddening,
-   * not punishing. The single spike pair and the final hop are the only
-   * things here that can actually kill you.
+   * The door is exactly where it appears to be and it stays there. What the
+   * warm-up teaches is not that the game moves the goalposts -- it does not,
+   * any more -- but the two things every later level is built out of: the
+   * screen is much longer than one jump, and the floor is not evidence.
    *
-   * Written as a phase machine in update() rather than triggers because the
-   * player crosses the same columns several times, and position triggers
-   * fire once on the way past regardless of which lap they are on. */
+   * Deliberately soft. Three of the four sections cannot kill you at all, so
+   * the one that can lands on a player who has spent forty tiles being told
+   * that flat ground is flat ground. */
   {
     name: 'WARM UP',
-    map: [
-      ...Array(15).fill(EMPTY),
-      place({ 3: 'P', 20: 'D' }),
-      FULL, FULL
-    ],
+    cols: BIG_COLS, rows: BIG_ROWS,
+    map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      w.phase = 0;
-      // Where it runs to, and what it leaves in the road, is re-rolled every
-      // life. The shape of the joke is fixed; the route is not.
-      w.v = [
-        { flee: 28, back: 4, spike: 12, mid: 17, pillar: 17 },
-        { flee: 26, back: 6, spike: 18, mid: 11, pillar: 11 },
-        { flee: 29, back: 3, spike: 9,  mid: 21, pillar: 21 },
-        { flee: 27, back: 5, spike: 15, mid: 20, pillar: 20 }
-      ][w.variant];
-      w.msg('walk right. touch door. easy.', 150);
-    },
-    update(w) {
-      const c = (w.player.x + w.player.w / 2) / TILE;
-      const v = w.v;
-
-      if (w.phase === 0 && c > 13) {
-        w.phase = 1;
-        w.doorTo(v.flee, 15);
-        w.shakeIt(5);
-        w.msg('...the door is shy.');
-        Sfx.teleport();
-
-      } else if (w.phase === 1 && c > v.flee - 3) {
-        // all the way back past your own spawn
-        w.phase = 2;
-        w.doorTo(v.back, 15);
-        w.shakeIt(6);
-        w.spikes(v.spike, 15, 2, '^');   // and something to clear on the way
-        w.msg('oh. were you close?');
-        Sfx.teleport();
-
-      } else if (w.phase === 2 && c < v.back + 4) {
-        // and it leaves before you arrive, naturally
-        w.phase = 3;
-        w.doorTo(v.mid, 15);
-        w.shakeIt(5);
-        w.msg('warmer.');
-        Sfx.teleport();
-
-      } else if (w.phase === 3 && Math.abs(c - v.mid) < 3) {
-        // one honest jump, once the walking has stopped being funny
-        w.phase = 4;
-        w.wall(v.pillar, 14, 1, 2);
-        w.doorTo(v.pillar, 13);
-        w.msg('fine. take it.');
-      }
+      /* FIRSTLIE always sits last: it is the level's whole point, and a lie
+       * told before the level has established the truth it contradicts is
+       * just a hole in the ground. What varies is the walk up to it. */
+      route(w, WARMUP_SECTIONS, [
+        ['WALK', 'HOP', 'LEDGE', 'FIRSTSPIKE', 'FIRSTLIE'],
+        ['HOP', 'WALK', 'FIRSTSPIKE', 'LEDGE', 'FIRSTLIE'],
+        ['LEDGE', 'FIRSTSPIKE', 'WALK', 'HOP', 'FIRSTLIE'],
+        ['WALK', 'LEDGE', 'HOP', 'FIRSTSPIKE', 'FIRSTLIE']
+      ]);
+      w.msg('the door is right there. off you go.', 150);
     }
   },
 
@@ -342,51 +773,33 @@ const LEVELS = [
   /* ---------------------------------------------------------------- 3 */
   {
     name: 'POINTY',
-    map: [
-      ...Array(15).fill(EMPTY),
-      place({ 2: 'P', 29: 'D' }),
-      FULL, FULL
-    ],
+    cols: BIG_COLS, rows: BIG_ROWS,
+    map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      /* Leg 1 runs the floor, leg 2 is a climb, leg 3 drops you back down and
-       * sends you home. The staircase always ascends *from the side you
-       * arrive on toward the door*, which is not decoration: you reach it
-       * walking from the previous door, and a staircase built on the far side
-       * means walking at the door puts you underneath it with nothing to
-       * stand on. Ledges rise two rows and step three columns, the limits of
-       * a jump that also has to land on something. */
-      w.v = [
-        { a: [[8, 2], [14, 2], [20, 2]], door: 18, door2: 14, home: [[10, 2], [16, 2], [22, 2]] },
-        { a: [[9, 2], [15, 2], [21, 2]], door: 15, door2: 17, home: [[10, 2], [15, 2], [21, 2]] },
-        { a: [[10, 2], [16, 2], [21, 2]], door: 20, door2: 12, home: [[9, 2], [15, 2], [21, 2]] },
-        { a: [[8, 2], [15, 2], [22, 2]], door: 16, door2: 19, home: [[11, 2], [17, 2], [23, 2]] }
-      ][w.variant];
-
-      const floorRun = (which) => (wl) => {
-        clearAir(wl, 9, 15);
-        wl.v[which].forEach((g) => wl.spikes(g[0], 15, g[1], '^'));
-      };
-      const climb = (which, fromRight) => (wl) => {
-        const D = wl.v[which];
-        clearAir(wl, 10, 15);
-        stairTo(wl, D, fromRight);
-        /* No spikes under the staircase. Missing a ledge already costs the
-         * entire climb -- you land on the floor and start again from the
-         * bottom -- and spikes there turn a recoverable mistake into a death
-         * without adding a decision anywhere. */
-        wl.shakeIt(6);
-        Sfx.trap();
-      };
-
-      journey(w, [
-        { col: 29, row: 15, arm: floorRun('a'), delay: 2 },
-        { col: w.v.door, row: 10, say: 'up. obviously.', arm: climb('door', true) },
-        { col: 2, row: 15, say: 'now get down', arm: floorRun('home') },
-        { col: w.v.door2, row: 10, say: 'and back up', arm: climb('door2', false) }
+      /* GREETING opens every route, and that is load-bearing rather than
+       * tidy. Its spikes are honest and a jump beats them, so by the time
+       * CEILING presents the identical spikes twelve tiles later, "jump, and
+       * jump early" is a habit the level installed itself -- which is the
+       * only reason the block at STAND-3 is funny instead of arbitrary.
+       *
+       * After that the order is genuinely shuffled, because the sections
+       * teach contradictory things (DROPOUT says jump further, CEILING says
+       * jump smaller, PATIENCE says do not jump yet) and meeting them in a
+       * different order is a different level. */
+      /* No WALK in here. An empty section is a fine joke in the warm-up, where
+       * the point is that the screen is longer than you expected; in a level
+       * with real traps it just leaves ten tiles of blank floor, and since
+       * CEILING's spike, block and phantom are all sprung or invisible, a
+       * route of WALKs renders as an empty room. Every connector POINTY uses
+       * puts something on the screen. */
+      route(w, POINTY_SECTIONS, [
+        ['GREETING', 'LEDGE', 'CEILING', 'HOP', 'DROPOUT'],
+        ['GREETING', 'HOP', 'DROPOUT', 'LEDGE', 'CEILING'],
+        ['GREETING', 'LEDGE', 'PATIENCE', 'HOP', 'CEILING'],
+        ['GREETING', 'HOP', 'STAIRWELL', 'LEDGE', 'CEILING']
       ]);
-    },
-    onFakeDoor(w) { nextLeg(w); }
+    }
   },
 
   /* ---------------------------------------------------------------- 4 */
@@ -945,66 +1358,54 @@ const LEVELS = [
   /* --------------------------------------------------------------- 13 */
   {
     name: 'SPIKE TRAIN',
-    map: [
-      ...Array(14).fill(EMPTY),
-      place({ 13: rep('#', 3) }),
-      place({ 1: 'P', 30: 'D' }),
-      place({ 0: rep('#', 18), 20: rep('#', 12) }),
-      place({ 0: rep('#', 18), 20: rep('#', 12) })
-    ],
+    cols: BIG_COLS, rows: BIG_ROWS,
+    map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      /* A new train every leg, entering from behind whichever way you are
-       * now running, so turning round never buys you distance. Speed is the
-       * real difficulty dial: the player runs at PHYS.maxRun (2.4), so the
-       * train's speed decides how much of the crossing you may spend on the
-       * spikes rather than on running. */
-      /* Spikes stay clear of columns 18-19, which is the level's permanent
-       * gap. Put one next to it and the sequence becomes jump-spike, land on
-       * two tiles, jump-gap immediately -- three precise moves in a row with
-       * a train behind you, which is not tension, it is a dice roll.
+      /* One train, one direction, the whole 64 tiles. The old version ran the
+       * chase twice across a 32 tile screen and turned you round in the middle,
+       * which meant the second leg started with a train already inbound and the
+       * player pressed against a wall -- tense for the wrong reason. A screen
+       * this wide does not need the trick: the chase is simply long.
        *
-       * They also stay inside columns 11-26. Legs alternate direction, so
-       * each one begins jammed against an edge with a train already inbound;
-       * a spike two tiles from that standing start has to be jumped before
-       * the player has any speed to jump with. */
-      w.v = [
-        [{ speed: 1.5, spikes: [12, 24] }, { speed: 1.5, spikes: [25, 13] }],
-        [{ speed: 1.6, spikes: [13, 25] }, { speed: 1.4, spikes: [24, 11] }],
-        [{ speed: 1.4, spikes: [11, 23] }, { speed: 1.6, spikes: [26, 14] }],
-        [{ speed: 1.5, spikes: [13, 26] }, { speed: 1.5, spikes: [24, 11] }]
-      ][w.variant];
+       * Every obstacle here is visible from where you stand. Nothing in this
+       * level springs, because a trap you have to die to learn costs a death
+       * you cannot afford with a wall of spikes closing, and stacking the two
+       * makes a lottery rather than a level. The escalation in SPIKE TRAIN is
+       * the train: hesitate at one hurdle and every later one is tighter. */
+      route(w, TRAIN_SECTIONS, [
+        ['GAP', 'HURDLE', 'TEETH', 'NARROW', 'LID'],
+        ['HURDLE', 'LID', 'NARROW', 'GAP', 'TEETH'],
+        ['TEETH', 'GAP', 'LID', 'HURDLE', 'NARROW'],
+        ['LID', 'NARROW', 'TEETH', 'HURDLE', 'GAP']
+      ]);
 
-      const arm = (n, dir) => (wl) => {
-        wl.movers.length = 0;                    // last leg's train is done
-        wl.refill(1, 15, 30, 1, ' ');
-        const L = wl.v[n];
-        L.spikes.forEach((c) => wl.spikes(c, 15, 1, '^'));
-        /* Six tiles further out than the edge, deliberately. A leg starts
-         * with the player pressed against the wall the door was on, and a
-         * train spawned exactly at that edge arrives while they are still
-         * turning around -- about 14 frames, which is less than it takes to
-         * reverse direction at PHYS.accel. This gives roughly 70. */
+      /* The player runs at PHYS.maxRun (2.4) and the crossing is about 430
+       * frames of pure running, so the speed decides how much of that budget
+       * may be spent on jumps and mistakes rather than on running.
+       *
+       * These were tuned down from 2.2, where the solver could only win one
+       * variant in four thousand attempts. That is the signature of a level
+       * that has stopped being a chase and become a lottery: not "hesitate and
+       * it costs you" but "run it perfectly or do not run it". At ~1.9 a clean
+       * crossing finishes fifty-odd frames ahead, which is about one fumbled
+       * jump of slack -- enough that the pressure is real and recoverable.
+       *
+       * The head start exists because the train spawns behind the spawn point,
+       * and a player still reading the screen has not started running yet. */
+      const speed = [1.90, 1.95, 1.85, 1.92][w.variant];
+      w.msg('RUN', 90);
+      w.after(40, (wl) => {
         wl.mover({
-          x: dir > 0 ? -11 * TILE : VW + 6 * TILE, y: 0,
-          w: 5 * TILE, h: VH,
-          vx: dir * L.speed,
+          x: -6 * TILE, y: 0,
+          w: 5 * TILE, h: wl.rows * TILE,
+          vx: speed,
           style: 'wall', solid: false, deadly: true
         });
-        wl.msg('RUN', 90);
+        wl.shakeIt(6);
         Sfx.trap();
-      };
-
-      /* Two legs, not three. The train chases for the whole of a leg, so
-       * unlike the other levels there is no safe moment to recover a bad
-       * jump -- the failures compound instead of resetting, and a third
-       * crossing turned the level from demanding into a lottery. */
-      journey(w, [
-        { col: 30, row: 15, arm: arm(0, 1), delay: 2 },
-        { col: 2,  row: 15, say: 'RUN BACK', arm: arm(1, -1) }
-      ]);
-    },
-    onFakeDoor(w) { nextLeg(w); }
+      });
+    }
   },
 
   /* --------------------------------------------------------------- 14 */
@@ -1075,14 +1476,17 @@ const LEVELS = [
   }
 ];
 
-/* Sanity check the hand-authored maps at load time. */
+/* Sanity check the maps at load time, each against its own declared grid --
+ * route levels are 64x24 and map levels are the default 32x18. */
 LEVELS.forEach((lv, i) => {
-  if (lv.map.length !== ROWS) {
-    console.error(`Level ${i + 1} "${lv.name}" has ${lv.map.length} rows, expected ${ROWS}`);
+  const cols = lv.cols || COLS;
+  const rows = lv.rows || ROWS;
+  if (lv.map.length !== rows) {
+    console.error(`Level ${i + 1} "${lv.name}" has ${lv.map.length} rows, expected ${rows}`);
   }
   lv.map.forEach((row, r) => {
-    if (row.length > COLS) {
-      console.error(`Level ${i + 1} "${lv.name}" row ${r} is ${row.length} chars, max ${COLS}`);
+    if (row.length > cols) {
+      console.error(`Level ${i + 1} "${lv.name}" row ${r} is ${row.length} chars, max ${cols}`);
     }
   });
 });

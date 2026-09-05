@@ -60,8 +60,8 @@ LEVELS.forEach(function (lv, i) {
   }
 
   // no spikes floating inside solid rock
-  for (var rr = 0; rr < ROWS; rr++) {
-    for (var c2 = 0; c2 < COLS; c2++) {
+  for (var rr = 0; rr < w.rows; rr++) {
+    for (var c2 = 0; c2 < w.cols; c2++) {
       if (w.grid[rr][c2] === '^' && !isSolidChar(w.at(c2, rr + 1))) {
         console.error(tag + ': up-spike at ' + c2 + ',' + rr + ' has no floor under it');
         problems++;
@@ -135,8 +135,8 @@ LEVELS.forEach(function (lv, i) {
   var levelIndex = -1, pc = -1, pr = -1;
   for (var i = 0; i < LEVELS.length && levelIndex < 0; i++) {
     var probe = new World(LEVELS[i], Game);
-    for (var r = 0; r < ROWS && levelIndex < 0; r++) {
-      for (var c = 0; c < COLS; c++) {
+    for (var r = 0; r < probe.rows && levelIndex < 0; r++) {
+      for (var c = 0; c < probe.cols; c++) {
         if (probe.grid[r][c] === 'F') { levelIndex = i; pc = c; pr = r; break; }
       }
     }

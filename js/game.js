@@ -308,6 +308,14 @@ const Game = {
   /* ---------------- draw --------------------------------------------- */
 
   draw() {
+    /* Menus are laid out for the default screen; a level gets a canvas the
+     * size of its own grid. Done here rather than on the state change so no
+     * transition can be missed -- setViewport is a no-op when nothing moved. */
+    const inLevel = this.world &&
+      this.state !== 'title' && this.state !== 'settings' && this.state !== 'win';
+    if (inLevel) Render.setViewport(this.world.cols, this.world.rows);
+    else Render.setViewport(COLS, ROWS);
+
     switch (this.state) {
       case 'title':    this.drawTitle(); break;
       case 'settings': this.drawSettings(); break;
@@ -431,22 +439,12 @@ const Game = {
 
 (function boot() {
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d', { alpha: false });
 
-  Render.init(ctx);
+  Render.init(canvas);
   Input.init();
   Game.load();
 
-  function fit() {
-    const scale = Math.max(1, Math.min(
-      Math.floor((innerWidth * 0.96) / VW),
-      Math.floor((innerHeight * 0.84) / VH)
-    ));
-    canvas.style.width = VW * scale + 'px';
-    canvas.style.height = VH * scale + 'px';
-  }
-  addEventListener('resize', fit);
-  fit();
+  addEventListener('resize', () => Render.fit());
 
   let last = performance.now();
   let acc = 0;
@@ -465,7 +463,6 @@ const Game = {
       steps++;
     }
 
-    ctx.imageSmoothingEnabled = false;
     Game.draw();
   }
 

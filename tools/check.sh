@@ -6,7 +6,7 @@
 # reason the game has no test dependencies to install. jsc lives inside the
 # framework bundle rather than on PATH, hence the path below.
 #
-#   ./tools/check.sh          # run all four
+#   ./tools/check.sh          # run all eight
 #   ./tools/check.sh solver   # run just one
 set -eu
 
@@ -22,8 +22,14 @@ fi
 cd "$(dirname "$0")"
 
 # harness first: it is the cheapest and catches load-time breakage that would
-# make the slower solvers fail in confusing ways.
-CHECKS=${*:-"harness solver finale dark crusher"}
+# make the slower solvers fail in confusing ways. jump second, because the
+# route levels are authored against the numbers it prints -- if the gap between
+# a full jump and a tapped one closes, every anti-air trap in levels.js is
+# either unavoidable or inert, and the solver would only tell you afterwards
+# and in a much more confusing way. viewport third: it is about what reaches
+# the screen rather than what the physics does, and a level nobody can see all
+# of is not worth solving.
+CHECKS=${*:-"harness jump viewport escalate solver finale dark crusher"}
 
 failed=""
 for name in $CHECKS; do

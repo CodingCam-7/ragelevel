@@ -59,9 +59,9 @@ Fourteen levels, each built around one betrayal:
 
 | # | Name | The joke |
 | --- | --- | --- |
-| 1 | Warm Up | The door runs away three times, once to behind your own spawn |
+| 1 | Warm Up | A long walk to an honest door, and one tile of floor that isn't |
 | 2 | Trust Issues | The brittle floor opens three times, the last one at the finish |
-| 3 | Pointy | Three waves of spikes fire out of the ground, including behind you |
+| 3 | Pointy | A spike you must jump, a block where that jump peaks, a hole where the smaller one lands |
 | 4 | The Shortcut | A solid-looking floor tile isn't; a wall rises on the way out |
 | 5 | Look Down | The "pit" is safe. Jumping over it is not. The next gap is real |
 | 6 | Fake News | Half the bridge is a painting, and the halves are uneven |
@@ -71,7 +71,7 @@ Fourteen levels, each built around one betrayal:
 | 10 | Upside Down | Gravity inverts, the exit is on the ceiling, and gravity stutters |
 | 11 | Trapdoor | The floor vanishes, except for uneven parts you can't see |
 | 12 | Mirror | Left and right swap. Four times, over spikes |
-| 13 | Spike Train | A wall of spikes sweeps the level, and it is faster than it looks |
+| 13 | Spike Train | A wall of spikes sweeps all 64 tiles, and every hesitation is spent |
 | 14 | Grand Finale | The door is a decoy, the walk back is trapped, and there's a crusher |
 
 The game never tells you where it lied. Invisible blocks are never drawn and
@@ -85,57 +85,126 @@ through the floor. But it is restored the instant you die. The cue is there to
 train your memory, not to accumulate into a map — play badly and the level
 never gets easier.
 
-## Length
+## Length, and how it used to be faked
 
-A single screen is 32 tiles, so a straight run is over in roughly 200 frames
-however many traps you pile onto it. More hazards make a level harder; they do
-not make it longer. The lever for length is making you cross the screen again.
+A single screen was 32 tiles, so a straight run was over in roughly 200 frames
+however many traps you piled onto it. More hazards made a level harder; they
+did not make it longer. The only lever left was making you cross the screen
+again — so most levels were **journeys**: reach the door, watch it reappear at
+the far side, walk back, repeat.
 
-So most levels are **journeys**: a list of stops. Reaching the door at one stop
-does not finish the level — the door moves to the next stop and that leg's
-hazards arm behind it. Only the last stop is a real door. A three-leg level
-runs 600–1000 frames instead of 200, and every leg can be a different fight.
+It worked, and it was tedious, because the second crossing was the first
+crossing with the furniture moved. The player was not going anywhere; they were
+being made to wait.
+
+**Routes** are the honest version, and levels 1, 3 and 13 are built out of
+them. The screen for a route level is **64 tiles wide** and the same 18 tall,
+drawn at the same 16px tiles and shown all at once — so you see the whole level
+and still cannot see which tile is lying. A level is laid out as **sections**,
+each about ten tiles of self-contained fight, placed left to right:
 
 ```js
-journey(w, [
-  { col: 29, row: 15, arm: layout(0) },
-  { col: 2,  row: 15, say: 'back you go', arm: layout(1) },
-  { col: 28, row: 15, say: 'and again',   arm: layout(2) }
+route(w, POINTY_SECTIONS, [
+  ['GREETING', 'LEDGE', 'CEILING', 'HOP', 'DROPOUT'],   // variant 0
+  ['GREETING', 'HOP', 'DROPOUT', 'LEDGE', 'CEILING'],   // variant 1
+  ...
 ]);
 ```
 
-Legs are not all sideways. Several levels send the door **up**, and the leg
-builds a staircase to reach it — three steps standing on rows 15, 13 and 11.
-Each level's climb does something the level already believes in: level 2's
-steps are brittle and dissolve while you are on them, level 11's lower steps
-are invisible so the door hangs over nothing, and level 12 starts its climb
-with the controls already inverted and never flips them back.
+You start on the left, you arrive on the right, and everything in between is
+somewhere you have not been. The door does not move. There is one door and you
+reach it once.
 
-The first step sits at row 15 — the player's own body row — and that detail is
-load-bearing. A ledge at row 14 is a *ceiling* to someone standing on the
-floor: you walk underneath it and nothing suggests you should be up there. A
-block at row 15 stops you, and getting over it puts you on top of it.
+A route is not *longer* than the journey it replaced, and it is worth saying so
+plainly, because "longer" is the thing it looks like it should buy. On the
+optimal line the solver walks, a five-section route comes out the same or
+shorter — L1 381–504f → 384–480f, L3 521–599f → 388–494f, L13 434–473f →
+391–436f. A journey padded its count with dead time: the teleport beat, the
+hazards arming after a delay, and a walk back over floor already crossed. What
+a route changes is that none of those frames is a repeat.
 
-Three rules fall out of legs alternating direction, and all three were learned
-by watching levels turn out impossible rather than merely hard:
+The floor on a route level is the bottom row of the screen and exactly one tile
+thick. That is not decoration: a thicker floor needs the rows under a phantom
+tile carved away, and a carved-out substrate is a notch in the ground visible
+from across the level, pointing straight at the tile about to betray you.
 
-- **Hazards belong in the middle of the screen.** A leg starts pinned against
-  whichever edge the last door was on, so a trap three tiles from that standing
-  start has to be answered before you have any speed to answer it with.
-- **Nothing may be direction-dependent.** A spike tucked behind a wall works
-  when the wall is always met from one side; met from the other you land into
-  the wall with nowhere to go.
-- **A climb must ascend from the side you arrive on.** You reach a leg walking
-  from the previous door, so a staircase built on the far side of the door
-  leaves you standing underneath it with nothing to stand on and no reason to
-  walk past it.
+### Fitting on the screen
+
+There is no camera. The whole level is on screen or the level is broken, so the
+canvas is resized to whatever grid is up — 512x288 for a menu or an old level,
+1024x288 for a route — and `Render.fit` picks a scale for it.
+
+Whole-pixel scales while there is room for them, which on any ordinary desktop
+is what happens, and is what keeps the art crisp. Below 1:1 the scale goes
+fractional instead of stopping at 1. That case is not exotic: a route is 1024
+pixels wide, so every window narrower than that hits it, and the alternative is
+worse than slightly uneven pixels. `body` is `overflow: hidden`, so a canvas
+wider than the window is not scrolled — it is cut off, quietly, and the piece
+that disappears is the right-hand end with the door on it.
+
+The one thing that genuinely does not survive being drawn at half scale is
+5x7 text: seven real pixels of HUD is a smudge. So `Render.textBoost` gives
+every glyph an extra pixel per font pixel on a grid twice as wide, which is
+exactly what the canvas lost. It is added rather than multiplied on purpose —
+body text needs the whole doubling, but headline text is already big enough to
+survive the shrink, and doubling *that* would push the stacked lines of the
+death and pause overlays into each other.
+
+## How the traps escalate
+
+A section is not one trap. It is a trap, and a punishment for the answer to it:
+
+1. something kills you, and the obvious response is the right one
+2. the obvious response is itself trapped, and the counter is aimed at exactly
+   what step 1 taught you to do
+3. the refinement that beats step 2 has its own landing covered
+
+Level 3's `CEILING` section is the canonical one. Spikes shoot out of the
+floor, so you jump. Next life you know they are coming, so you jump early and
+high — and a block slams in at the exact height a full jump peaks at, dropping
+you onto fresh spikes. The answer is a *half* jump, which is a thing you have
+to be taught by being killed for the whole one. Overshoot that half jump and
+you land on a phantom three tiles further on.
+
+`tools/escalate.js` prints the whole band and asserts it:
+
+```
+  hold  outcome
+   3-8  through
+     9  fell (the phantom)
+ 10-16  spiked (the anti-air block)
+```
+
+None of this counts your deaths. Every step is a `watch` — a trigger with a
+condition on what the player is *doing*, not on which attempt this is — so the
+level is the same level on your fortieth try as your first. It is not getting
+harder because you are failing. You are being punished for the conclusion you
+drew, and the conclusion was reasonable, and that is the joke.
+
+It also means the traps are aimed rather than ambient: a full jump on open
+ground is never punished, and a player who happens to hop small first time is
+never killed for a mistake they did not make.
+
+**Difficulty is bounded on purpose.** A route is one signature trap plus one or
+two lesser ones, and the rest is connective ground that costs a jump and
+nothing else. Five escalating traps in a row was tried and reverted: with no
+checkpoint, beating the fifth means replaying the other four cleanly, so one
+mistake costs the whole level. That is the failure this game most needs to
+avoid — not "hard", but "hard in a way that makes the retry expensive", which
+is what turns a player from irritated into finished.
 
 ## Variants
 
-Every level exists in three or four hand-authored versions, and **the game re-rolls
-which one you get every time you die.** Positions move, widths change, timings
-shift. Clearing a level once tells you how it works; it does not tell you where
-anything will be next time.
+Every level exists in three or four hand-authored versions. The variant is
+rolled **when you enter a level, and held until you clear it** — so it is the
+same level for every death on it, and a different one next playthrough.
+
+That used to re-roll on every *death*, which sounds more hostile and is in fact
+just noise: "next time I will jump earlier" is only a lesson if next time is the
+same level. With the layout moving under you, no route could be learned and the
+traps read as arbitrary difficulty rather than as a joke being played on you.
+Variety belongs between playthroughs; within one, the level has to hold still
+long enough to teach you something.
 
 This is deliberately *not* random generation. The dice choose between prepared
 levels, they never build one — so every arrangement you can encounter has been
@@ -178,6 +247,9 @@ js/
 tools/
   check.sh    runs every check below; non-zero exit if any fail
   harness.js  smoke test + invisibility audit
+  jump.js     measures the jump arc the route traps are built on
+  viewport.js proves both grids fit on screen at any window size
+  escalate.js proves level 3's trap chain still escalates
   solver.js   greedy bot, proves levels 1-13 completable
   finale.js   route-following bot for level 14
   dark.js     level 9 played with vision limited to the light radius
@@ -190,8 +262,25 @@ game runs from `file://` without a server.
 
 ## Adding a level
 
-Append to `LEVELS` in `js/levels.js`. A level is `ROWS` (18) strings of at
-most `COLS` (32) characters, plus optional hooks.
+A level is either a **map level** — `ROWS` (18) strings of at most `COLS` (32)
+characters, the original form, still used by levels 2 and 4–12 — or a **route
+level**, which declares a bigger grid and builds its geometry in `init`:
+
+```js
+{
+  name: 'MY ROUTE',
+  cols: BIG_COLS, rows: BIG_ROWS,     // 64 x 18
+  map: blank(BIG_COLS, BIG_ROWS),     // the route fills this in
+  variants: 4,
+  init(w) { route(w, MY_SECTIONS, [ ['A','B','C','D','E'], ... ]); }
+}
+```
+
+Grid size is per level: `World` reads `def.cols`/`def.rows` and `Render`
+resizes the canvas to match, so the two forms coexist and levels can be
+converted one at a time.
+
+Map levels are appended to `LEVELS` the old way:
 
 ```js
 {
@@ -246,13 +335,16 @@ glyph sizes. Both report to the browser console.
 JavaScriptCore (built into macOS) and drive bots through it. Nothing to install.
 
 ```
-./tools/check.sh          # all five
+./tools/check.sh          # all eight
 ./tools/check.sh solver   # just one
 ```
 
 | Check | Proves |
 | --- | --- |
 | `harness.js` | Nothing throws, geometry is sane, `I`/`F` tiles give nothing away, level 8's charger stays unreactable, and the death-count wipe stays expensive |
+| `jump.js` | The jump arc, measured: a full jump peaks four rows above the floor and a tapped one two, so a block at `STAND-3` stops the big jump and lets the small one through. Fails if that gap ever closes |
+| `viewport.js` | Neither grid is ever clipped, at thirteen window sizes from 1920x1080 down to a phone, and the scale stays on whole pixels wherever there is room for it |
+| `escalate.js` | Level 3's chain still escalates — the spike forces a hop, overshooting it finds the phantom, and only the biggest jumps trip the block — and that the block stays aimed rather than banning jumping outright |
 | `solver.js` | A greedy bot can complete every variant of levels 1–13 |
 | `finale.js` | Every variant of level 14, which needs backtracking, is beatable by a route-following bot |
 | `dark.js` | Every variant of level 9 is beatable using only what the light bubble shows, and punishing when you react late |
@@ -263,8 +355,21 @@ invisible to it — level 9 could become unreadable and still pass as SOLVABLE.
 It drives a bot that may only act on hazards inside the light radius, and only
 after a reaction delay.
 
-`check.sh` exits non-zero if any check fails, and runs all five even after one
+`check.sh` exits non-zero if any check fails, and runs all eight even after one
 fails so a second breakage can't hide behind the first.
+
+`viewport.js` exists because a level that does not fit is not a level. The
+body is `overflow: hidden`, so a canvas wider than the window is not scrolled,
+it is cut off — silently, with no error anywhere, and the part that goes
+missing is the right-hand end where the door is. That is a real risk here and
+not a theoretical one: a route is 1024 native pixels across, so any window
+narrower than that has to give up whole-pixel scaling to show the level at all.
+
+`jump.js` and `escalate.js` exist because the route traps are built on a
+four-row window between a full jump and a tapped one. Nudge a jump constant and
+that window closes: the anti-air blocks become either unavoidable or inert, and
+`solver.js` will happily report the level as solvable either way, because the
+bot just takes a different arc. Those two checks fail loudly instead.
 
 **Run it after touching physics constants or level layouts.** That is the
 failure this suite exists for: nudging `gravity` or a jump constant can make a
