@@ -60,7 +60,7 @@ Fourteen levels, each built around one betrayal:
 | # | Name | The joke |
 | --- | --- | --- |
 | 1 | Warm Up | A long walk to an honest door, and one tile of floor that isn't |
-| 2 | Trust Issues | The brittle floor opens three times, the last one at the finish |
+| 2 | Trust Issues | The floor tells you which tiles it will take away, and the one clean tile is the lie |
 | 3 | Pointy | A spike you must jump, a block where that jump peaks, a hole where the smaller one lands |
 | 4 | The Shortcut | A solid-looking floor tile isn't; a wall rises on the way out |
 | 5 | Look Down | The "pit" is safe. Jumping over it is not. The next gap is real |
@@ -97,7 +97,7 @@ It worked, and it was tedious, because the second crossing was the first
 crossing with the furniture moved. The player was not going anywhere; they were
 being made to wait.
 
-**Routes** are the honest version, and levels 1, 3 and 13 are built out of
+**Routes** are the honest version, and levels 1, 2, 3 and 13 are built out of
 them. The screen for a route level is **64 tiles wide** and the same 18 tall,
 drawn at the same 16px tiles and shown all at once — so you see the whole level
 and still cannot see which tile is lying. A level is laid out as **sections**,
@@ -118,8 +118,8 @@ reach it once.
 A route is not *longer* than the journey it replaced, and it is worth saying so
 plainly, because "longer" is the thing it looks like it should buy. On the
 optimal line the solver walks, a five-section route comes out the same or
-shorter — L1 381–504f → 384–480f, L3 521–599f → 388–494f, L13 434–473f →
-391–436f. A journey padded its count with dead time: the teleport beat, the
+shorter — L1 381–504f → 384–480f, L2 420–445f → 384–418f, L3 521–599f →
+388–494f, L13 434–473f → 391–436f. A journey padded its count with dead time: the teleport beat, the
 hazards arming after a delay, and a walk back over floor already crossed. What
 a route changes is that none of those frames is a repeat.
 
@@ -263,7 +263,7 @@ game runs from `file://` without a server.
 ## Adding a level
 
 A level is either a **map level** — `ROWS` (18) strings of at most `COLS` (32)
-characters, the original form, still used by levels 2 and 4–12 — or a **route
+characters, the original form, still used by levels 4–12 — or a **route
 level**, which declares a bigger grid and builds its geometry in `init`:
 
 ```js

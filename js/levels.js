@@ -387,6 +387,7 @@ function route(w, pool, orders) {
  * route is the same length or shorter on the optimal line:
  *
  *   L1   journey 381-504f   ->   route 384-480f
+ *   L2   journey 420-445f   ->   route 384-418f
  *   L3   journey 521-599f   ->   route 388-494f
  *   L13  journey 434-473f   ->   route 391-436f
  *
@@ -473,6 +474,156 @@ const WARMUP_SECTIONS = Object.assign({}, CONNECTORS, {
         x: s.c0 + 6, y: FLOOR - 3, w: 4, h: 4,
         run(wl) { wl.msg('the floor was the trap.'); }
       });
+    }
+  }
+});
+
+/* Level 2. The floor is the subject, and the level's whole argument is about
+ * which floor you are willing to believe.
+ *
+ * Brittle tiles are *drawn cracked*. That is not a concession, it is the
+ * premise: this level tells you exactly which ground it is going to take away
+ * and takes it away anyway, because knowing does not help when the answer is
+ * "then do not stand still" and the level keeps arranging reasons to stand
+ * still. Everything here is a variation on being denied a place to put your
+ * feet for a quarter of a second.
+ *
+ * A crumble fuse is 15 frames and maxRun is 2.4px -- so a tile you stepped on
+ * is gone by the time you are 2.25 tiles past it. Cracked ground crossed at
+ * a walk is survivable and cracked ground crossed at a dither is not, and
+ * that ratio is the only difficulty knob this level has. Both numbers live in
+ * PHYS and World.updateCrumbling; change either and re-measure before
+ * widening any of the spans below.
+ */
+const TRUST_SECTIONS = Object.assign({}, CONNECTORS, {
+
+  /* Rung zero, and it opens every variant. A plain run of cracked floor with
+   * nothing else in it: cross it at a walk and you live, stop on it and the
+   * ground is gone in a quarter of a second.
+   *
+   * Five tiles is deliberately short of dangerous -- 33 frames to cross, and
+   * the first tile does not blow until you are two tiles past it -- because
+   * this section is not a fight, it is the sentence the rest of the level
+   * argues with. A player has to have crossed cracked floor safely once for
+   * "you cannot stop here" to land later as a trap rather than as noise. */
+  CRUST: {
+    width: SECTION_W,
+    build(w, s) { w.fill(s.c0 + 3, FLOOR, 5, 1, 'B'); }
+  },
+
+  /* Cracked floor with a reason to leave it. Spikes fire out of the ground
+   * partway across, so the crossing has to be broken by a jump, and both the
+   * take-off and the landing are on floor that is already dissolving.
+   *
+   * The tile the spikes come out of is the one solid tile in the run, and it
+   * is solid for a reason that is mechanical before it is funny: spikes need
+   * a floor under them to sit on, and a spike whose floor crumbles away is
+   * left hanging in mid-air, still lethal, with nothing under it to explain
+   * why. harness.js checks for exactly that at load and would not have caught
+   * it here, because the tile is honest until fifteen frames after someone
+   * stands on it.
+   *
+   * It is also, unavoidably, the joke: the only ground in this section that
+   * will hold you is the ground with the spikes on it. */
+  TEETER: {
+    width: SECTION_W,
+    build(w, s) {
+      w.fill(s.c0 + 2, FLOOR, 6, 1, 'B');
+      w.set(s.c0 + 5, FLOOR, '#');
+    },
+    arm(w, s) { trapSpikes(w, s.c0 + 5, 1, s.c0 + 1); }
+  },
+
+  /* The level's actual point, and it always goes last, because it is a lie
+   * that only works once the truth it inverts has been established.
+   *
+   * Cracked floor, an honest one-tile hole in it, and on the far side of the
+   * hole two tiles that are not cracked -- clean, ordinary, the only
+   * trustworthy-looking ground in fifty tiles of warnings. The near one is a
+   * phantom. The far one is real. They are drawn identically, because an 'F'
+   * is pixel-identical to a '#' everywhere in this game.
+   *
+   * Every other level's phantom hides in ground that looks like all the other
+   * ground. This one is *advertised*, in the only vocabulary the level has,
+   * and the advertisement is what kills you: the level has spent four sections
+   * teaching you to read cracks as danger, so a tile without cracks reads as
+   * safety, and the short hop over the hole puts you on the first one.
+   *
+   * Two clean tiles rather than one, and the second being solid, is what makes
+   * this a trap instead of a wall. The lesson is a whole tile of aim -- "the
+   * far one, not the near one" -- which is a thing a player can see, decide
+   * and execute. It also puts the correct landing on ground with no fuse in
+   * it, and that is the part this section was rebuilt for: the first version
+   * ran cracked floor for three more tiles past the phantom, so beating the
+   * lie dropped you onto a fifteen-frame fuse with three tiles left to cross,
+   * and tools/solver.js duly failed variant 3 at column 56 -- having answered
+   * the trap correctly. A trap whose punishment lands on the right answer is
+   * not an escalation, it is a tax, and it is unreadable besides: nothing on
+   * screen distinguishes the run you survive from the run you do not.
+   *
+   * The hole is real and one tile wide, not two, and not decoration. It is
+   * there to make the short hop the natural jump rather than something the
+   * player has to be talked into: without it there is no reason to leave the
+   * ground at all and the phantom is just level 1's trick again. */
+  BREATHER: {
+    width: SECTION_W,
+    build(w, s) {
+      w.fill(s.c0 + 2, FLOOR, 7, 1, 'B');
+      pit(w, s.c0 + 4, 1);
+      w.set(s.c0 + 5, FLOOR, 'F');   // the near clean tile: not there
+      w.set(s.c0 + 6, FLOOR, '#');   // the far one: identical, and real
+    },
+    arm(w, s) {
+      w.watch({
+        x: s.c0 + 7, y: FLOOR - 3, w: 2, h: 4,
+        run(wl) { wl.msg('the clean one was the lie.'); }
+      });
+    }
+  },
+
+  /* This level's idea taken off the floor: a wall too tall to jump, one step
+   * up its near side, and the ledge you land on is cracked at the end you
+   * arrive at.
+   *
+   * Climbing is where standing still is hardest to avoid -- a jump has to be
+   * aimed, and aiming is done with your feet planted -- so a cracked ledge is
+   * the same demand the floor has been making, somewhere the player has much
+   * less room to answer it.
+   *
+   * The far end of the ledge is solid, and that tile is load-bearing in a way
+   * that has nothing to do with the joke: without it, a player who dithers
+   * once loses the cracked tiles and the climb becomes a rise nothing in this
+   * game can make. That is not a death -- falling off drops you on the floor
+   * unharmed, which is deliberate and is the same reasoning that keeps spikes
+   * out from under POINTY's STAIRWELL -- it is a level that cannot be finished
+   * and cannot kill you either, which is the one outcome worse than an unfair
+   * death, because the player has to work out for themselves that the level is
+   * over and press R. So the punishment for dithering is that the next attempt
+   * has to land on one tile instead of three.
+   *
+   * ONE step, not two, and that is a measurement rather than a preference.
+   * The first version stood a six-row wall here and climbed it in two hops,
+   * the second launched from the cracked step -- which is the whole idea, and
+   * it cost 754f and 905f on the two variants that carry this section against
+   * 406f and 426f on the two that do not. A greedy bot flails at an
+   * apex-limited hop taken off ground that is dissolving under the wind-up,
+   * and a level-2 player would have flailed at it too. Flattening the wall so
+   * its top is flush with the ledge removes the second hop entirely: 384f and
+   * 390f, in line with levels 1 and 3, and the cracked tiles still have to be
+   * crossed without stopping.
+   *
+   * The remaining geometry is the standard spacing: the step sits at STAND,
+   * the player's own body row, so it is a wall in the path rather than a
+   * ceiling overhead, and the ledge is two rows above it -- 32px against the
+   * 42px a full jump lifts. The floor from the floor is 48px and out of
+   * reach, which is what keeps the step mandatory. */
+  LEDGEBREAK: {
+    width: SECTION_W,
+    build(w, s) {
+      w.fill(s.c0 + 7, STAND - 2, 2, 4, '#');    // the wall, floor to STAND-2
+      w.fill(s.c0 + 1, STAND, 3, 1, '#');        // step 1, at body height
+      w.fill(s.c0 + 4, STAND - 2, 2, 1, 'B');    // step 2, dissolving
+      w.set(s.c0 + 6, STAND - 2, '#');           // ...and its solid far end
     }
   }
 });
@@ -694,80 +845,38 @@ const LEVELS = [
     }
   },
 
-  /* ---------------------------------------------------------------- 2 */
+  /* ---------------------------------------------------------------- 2 *
+   * Level 1 taught that the floor is not evidence. Level 2 answers the
+   * obvious next question -- "then how am I supposed to know?" -- with the
+   * cracked tile, which is the game being scrupulously honest about where the
+   * ground is going to fail, and then arranging four reasons why honesty does
+   * not help.
+   *
+   * BREATHER is the punchline and always runs last, for the same reason
+   * FIRSTLIE does in level 1: an inverted rule is only funny once the rule is
+   * installed, and a clean tile among cracked ones means nothing to a player
+   * who has not yet learned to read cracks. CRUST always runs first and
+   * installs it. What varies is the argument in between.
+   *
+   * Three of the four variants carry only one real fight between the two
+   * ends. That is the bounded-difficulty rule doing its job at the place it
+   * matters most: this is the second level in the game, and a player who is
+   * still learning that the floor lies should not also be learning to ration
+   * their momentum across three hazards in a row. */
   {
     name: 'TRUST ISSUES',
-    map: [
-      ...Array(15).fill(EMPTY),
-      place({ 2: 'P', 28: 'D' }),
-      place({ 0: rep('#', 7), 7: rep('B', 18), 25: rep('#', 7) }),
-      EMPTY
-    ],
+    cols: BIG_COLS, rows: BIG_ROWS,
+    map: blank(BIG_COLS, BIG_ROWS),
     variants: 4,
     init(w) {
-      /* Four crossings of the same brittle span, and the holes are punched
-       * somewhere different on each one. The floor is refilled between legs
-       * on purpose: brittle tiles crumble wherever you stood, so without a
-       * rebuild the return trip would be over the trail of holes you left
-       * on the way out, which is not difficult, it is impossible. */
-      /* One layout per leg, not a growing pile: the holes are replaced each
-       * crossing rather than accumulated. Piling them up leaves single-tile
-       * landings, and on a brittle floor a single-tile landing crumbles under
-       * you while you line up the next jump.
-       *
-       * Every hole also sits between columns 10 and 21. Each leg starts where
-       * the last one ended, at the far edge, and a hole opened four tiles from
-       * a standing start on a floor that is already dissolving is not a jump
-       * anyone can be asked to make. */
-      w.v = [
-        [[[11, 2], [19, 3]], [[13, 2], [20, 2]], [[10, 3], [18, 2]], [[12, 2], [19, 2]]],
-        [[[12, 3], [20, 2]], [[10, 2], [18, 3]], [[13, 2], [21, 2]], [[11, 3], [19, 2]]],
-        [[[10, 2], [18, 2]], [[12, 3], [20, 2]], [[11, 2], [19, 3]], [[13, 2], [21, 2]]],
-        [[[13, 2], [21, 2]], [[11, 2], [19, 2]], [[12, 3], [20, 3]], [[10, 2], [18, 2]]]
-      ][w.variant];
-
-      // where the one brittle stretch sits on each leg
-      w.brittle = [[8, 3], [22, 3], [9, 3], [21, 3]];
-
-      const punch = (n) => (wl) => {
-        /* The whole span used to be brittle, which does not survive being
-         * crossed four times: every tile you stand on dissolves behind you,
-         * so a leg that needs even a step backwards is already lost. Now the
-         * rebuilt floor is solid and brittle is a *feature* placed on it --
-         * one stretch per leg, away from the holes, that punishes standing
-         * around rather than punishing having been there at all. */
-        wl.refill(7, 16, 18, 1, '#');               // the floor grows back
-        wl.v[n].forEach((h) => wl.crumbleNow(h[0], 16, h[1], 1));
-        const b = wl.brittle[n];
-        wl.refill(b[0], 16, b[1], 1, 'B');
-        wl.shakeIt(6);
-      };
-
-      /* The climb legs use brittle steps. Standing on one lights a fuse, so
-       * the staircase is dissolving while you are on it and stopping to line
-       * up the next hop is the mistake -- which is this level's whole idea,
-       * moved off the floor and into the air. The top ledge stays solid: a
-       * brittle tile under the door would drop you the moment you arrived. */
-      const climb = (D, fromRight) => (wl) => {
-        wl.refill(7, 16, 18, 1, '#');
-        clearAir(wl, 10, 15);
-        stairTo(wl, D, fromRight);
-        const steps = fromRight ? [[D + 6, 15, 3], [D + 3, 13, 3]]
-                                : [[D - 8, 15, 3], [D - 5, 13, 3]];
-        steps.forEach((L) => wl.fill(L[0], L[1], L[2], 1, 'B'));
-        wl.shakeIt(6);
-        Sfx.crumble();
-      };
-
-      journey(w, [
-        { col: 28, row: 15, arm: punch(0) },
-        { col: 17, row: 10, say: 'up, and quickly', arm: climb(17, true) },
-        { col: 3,  row: 15, say: 'back you go',     arm: punch(2) },
-        { col: 14, row: 10, say: 'again. quicker.', arm: climb(14, false) }
+      route(w, TRUST_SECTIONS, [
+        ['CRUST', 'HOP', 'TEETER', 'WALK', 'BREATHER'],
+        ['CRUST', 'LEDGEBREAK', 'WALK', 'HOP', 'BREATHER'],
+        ['CRUST', 'TEETER', 'LEDGE', 'LEDGEBREAK', 'BREATHER'],
+        ['CRUST', 'WALK', 'LEDGEBREAK', 'HOP', 'BREATHER']
       ]);
       w.msg('the floor is only mostly real', 150);
-    },
-    onFakeDoor(w) { nextLeg(w); }
+    }
   },
 
   /* ---------------------------------------------------------------- 3 */
