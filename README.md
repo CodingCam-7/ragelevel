@@ -61,7 +61,7 @@ Fourteen levels, each built around one betrayal:
 | --- | --- | --- |
 | 1 | Pits | Level Devil's first door: the floor opens, twice, then walks towards you |
 | 2 | Spikes | Its second: the floor grows teeth, and the ceiling answers your jump |
-| 3 | Walls | Its third: things appear in front of you, and one of them plays peek-a-boo |
+| 3 | Walls | Its third: things appear in front of you, and one of them walks you backwards into a hole |
 | 4 | The Shortcut | A solid-looking floor tile isn't; a wall rises on the way out |
 | 5 | Look Down | The "pit" is safe. Jumping over it is not. The next gap is real |
 | 6 | Fake News | Half the bridge is a painting, and the halves are uneven |

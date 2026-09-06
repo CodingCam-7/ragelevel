@@ -500,12 +500,6 @@ function onColumn(w, from, n, run) {
   w.watch({ x: from, y: 0, w: n, h: BIG_ROWS, run: run });
 }
 
-/** Is the player clear of these columns? */
-function clearOf(w, c, n) {
-  const p = w.player;
-  return p.x + p.w <= c * TILE || p.x >= (c + n) * TILE;
-}
-
 /**
  * A hole that walks along the floor towards you (door 1, stage 3).
  *
@@ -750,91 +744,234 @@ const SPIKE_SECTIONS = {
  * Door 3 - WALLS
  *
  * "The wall moves and blocks the path. It suddenly pops out and does a
- * peek-a-boo, so you can't let your guard down." Where the first two doors
- * take the floor away, this one puts something in front of you -- so for the
- * first time in the game the answer is sometimes to stop, and the door has to
- * teach that without ever making stopping the safe default.
+ * peek-a-boo, so you can't let your guard down."
+ *
+ * The first cut of this door was the worst level in the game, and the reason
+ * is worth writing down because it is not obvious and it is easy to do again.
+ * Every stage in doors 1 and 2 kills you. A wall does not kill you, it *stops*
+ * you -- so the first cut had a player bumping into things, backing up and
+ * taking another run at them. tools/wallprobe found the shape of it: jump at
+ * the first wall from a tile too early and every hold length in the sweep ends
+ * pressed against it at column 8.7, stuck rather than dead. Being stuck is
+ * worse than dying here. Dying costs half a second and teaches something;
+ * reversing costs four and teaches that the level is fiddly.
+ *
+ * Two of the five stages were worse than that. PEEKABOO was a three-tile wall
+ * on a sixty-frame cycle, which made the stage *standing still and waiting* --
+ * in a game whose first two levels are built on standing still being how you
+ * die -- and was most of why this door ran 520-814f against 384-444f for the
+ * other two. BEHIND slammed a wall down behind a player who had no reason to
+ * go back, and the comment shipped with it said so: "costs a player moving
+ * forward precisely nothing".
+ *
+ * So the door keeps its subject and changes its verb. A wall here does not
+ * block; it shoves you somewhere, drops on you, or takes the floor while you
+ * deal with it. Four of the five kill. RISE is the survivor and the honest
+ * one, and every door needs exactly one of those.
  *
  * Wall heights are not free. Measured against a 42.2px jump from a floor at
- * row 17: a wall two tiles tall tops out at row 15, a 32px rise, and can be
- * jumped onto. Three tiles tops out at row 14, a 48px rise, and cannot -- it
- * is a barrier, not an obstacle. Every wall below is one or the other on
- * purpose and there is no third case.
+ * row 17: two tiles tops out at row 15, a 32px rise, and can be jumped onto.
+ * Three tiles tops out at row 14, a 48px rise, and cannot -- it is a barrier,
+ * not an obstacle. Nothing below is three tiles, because a barrier in a level
+ * with no way round it is the bumping-and-reversing problem with extra steps.
  * ------------------------------------------------------------------ */
+
+/**
+ * A wall that walks, and the reason this door works at all.
+ *
+ * Solid, so `World.updateMovers` already does everything: it pushes the player
+ * along in front of it, and if that push presses them into anything they are
+ * squashed. Neither behaviour is written here. What makes it a trap rather
+ * than a nuisance is what is behind the player when it arrives -- push someone
+ * across solid ground and you have inconvenienced them, push them across a
+ * hole that opened four frames ago and you have killed them with their own
+ * hesitation.
+ *
+ * Two tiles tall on purpose, so the answer is to jump it.
+ *
+ * It HALTS at `stopCol` rather than trundling on, and that is a pacing fix
+ * rather than a tidiness one. Left running it walked the length of the level
+ * shoving the player through stages that had nothing to do with it -- and,
+ * worse, it made waiting the best strategy: stand behind the hole, let it go
+ * by, walk on. The solver duly took that line and this door's winning runs
+ * came out at 986-1983f against 384-444f for the other two, which is most of a
+ * minute of a five-second game spent watching a block travel. Halted, it
+ * becomes an ordinary two-tile wall the moment it stops, so the worst the
+ * patient line can cost is the walk back plus the 23 frames of climbing it.
+ */
+function pusher(w, col, tall, speed, stopCol) {
+  w.shakeIt(6);
+  Sfx.trap();
+  return w.mover({
+    x: col * TILE,
+    y: (STAND - tall + 1) * TILE,
+    w: TILE,
+    h: tall * TILE,
+    vx: -speed,
+    solid: true,
+    tick(m) {
+      if (m.x + m.vx <= stopCol * TILE) { m.x = stopCol * TILE; m.vx = 0; }
+    }
+  });
+}
+
+/** A block that falls out of the ceiling once and stays where it lands. */
+function dropper(w, col, tall, speed) {
+  const rest = (FLOOR - tall) * TILE;
+  return w.mover({
+    x: col * TILE,
+    y: -tall * TILE,
+    w: TILE,
+    h: tall * TILE,
+    vy: speed,
+    style: 'crusher',
+    solid: true,
+    tick(m, wl) {
+      if (m.vy > 0 && m.y + m.vy >= rest) {
+        m.vy = rest - m.y;
+        Sfx.slam();
+        wl.shakeIt(8);
+      }
+    }
+  });
+}
+
+/** The floor gives way one tile at a time, starting behind you. */
+function collapse(w, from, to, step) {
+  const dir = to < from ? -1 : 1;
+  const n = Math.abs(to - from);
+  for (let i = 0; i <= n; i++) {
+    const c = from + dir * i;
+    w.after(i * step, (wl) => wl.crumbleNow(c, FLOOR, 1, 1));
+  }
+}
+
 const WALL_SECTIONS = {
 
-  /* A two-tile wall shoots out of the floor in front of you. Jumpable, and
-   * meant to be: this is the door introducing itself, and the only cost of
-   * getting it wrong is stopping. */
+  /* The honest one, and the door introducing itself: a two-tile wall shoots
+   * out of the floor and you jump it. Nothing else happens.
+   *
+   * It arms six tiles out rather than three, which is the fix for the stuck-at
+   * -8.7 sweep. With three tiles of warning the wall could appear *after* a
+   * cautious player had already jumped, so their caution landed them short and
+   * against it; six tiles means the wall is up before any sensible jump is
+   * taken, and every take-off from there on clears it. The stage is allowed to
+   * be free. It is the only rung the rest of the door stands on. */
   RISE: {
     width: SECTION_W,
     build() {},
     arm(w, s) {
-      onColumn(w, s.c0 + 1, 2, (wl) => { wl.wall(s.c0 + 5, STAND - 1, 1, 2); });
+      onColumn(w, s.c0, 2, (wl) => { wl.wall(s.c0 + 6, STAND - 1, 1, 2); });
     }
   },
 
-  /* The peek-a-boo, and the reason the door is named after it. A three-tile
-   * wall -- too tall to jump, no way over it -- that pops up and drops back
-   * on a cycle, so the stage is not a jump at all. It is standing still and
-   * waiting, in a game that has spent two doors teaching that standing still
-   * is how you die.
+  /* The stage the door was rebuilt around.
    *
-   * The raise is skipped whenever the player is inside those columns. That is
-   * not mercy, it is the absence of a bug: a wall filled in on top of the
-   * player leaves the collision resolver pushing them out of solid rock in
-   * whichever direction it happens to check first. Skipping costs the trap
-   * nothing, because the player standing there is a player who already got
-   * through. */
-  PEEKABOO: {
+   * The floor behind you drops out, and a wall comes down the corridor at you
+   * from in front. It is two tiles, so it can be jumped, and that is the whole
+   * answer -- but it has to be jumped *early*, because every frame spent
+   * deciding is a frame of being walked backwards towards a hole that was
+   * solid ground a moment ago. Hesitate and the level does not kill you: it
+   * moves you, and then the hole does.
+   *
+   * There is a second answer and it is left in deliberately: jump backwards
+   * over the pit, let the wall come to a stop, then cross the hole and climb
+   * it. It is slower and it works, and a player who finds it under pressure
+   * has earned it. The stage punishes standing still, not being slow.
+   *
+   * The wall stops with its face on the far lip of the hole, so a player
+   * pushed in front of it is pushed onto ground that is no longer there. That
+   * is the stage in one sentence, and it is why the hole opens behind you
+   * rather than in front. */
+  SHOVE: {
     width: SECTION_W,
     build() {},
     arm(w, s) {
-      const c = s.c0 + 5;
-      onColumn(w, s.c0, 2, (wl) => {
-        wl.msg('after you.');
-        /* Up thirty frames, down thirty. The first cut was up 32 and down 23,
-         * which is a half-second window to cross a tile that takes seven
-         * frames to cross -- passable, and tight enough that the stage read
-         * as reflex rather than as patience. Even halves make it a rhythm you
-         * can count, which is what the peek-a-boo is for. */
-        for (let i = 0; i < 8; i++) {
-          wl.after(i * 60, (l) => { if (clearOf(l, c, 1)) l.wall(c, STAND - 2, 1, 3); });
-          wl.after(i * 60 + 30, (l) => l.crumbleNow(c, STAND - 2, 1, 3));
-        }
+      onColumn(w, s.c0 + 3, 2, (wl) => {
+        wl.crumbleNow(s.c0 + 1, FLOOR, 2, 1);
+        wl.msg('back you go.');
+        pusher(wl, s.c0 + 9, 2, 1.6, s.c0 + 3);
       });
     }
   },
 
-  /* Both directions at once. A barrier slams down behind you at the same
-   * moment a jumpable one appears ahead, which costs a player moving forward
-   * precisely nothing and is included anyway, because the sound of a door
-   * closing behind you is most of what this door is for. The one in front is
-   * the actual stage and it is two tiles, like the first one. */
-  BEHIND: {
+  /* A block falls out of the ceiling onto the tile in front of you.
+   *
+   * The numbers make sprinting the answer and hesitation the death: it is 23
+   * frames from the trigger to being clear of the far side at a full run, and
+   * 30 for the block to reach the floor, so a player who keeps going is out
+   * from under it with about seven frames to spare and a player who breaks
+   * stride even slightly is not. Once it lands it is an ordinary two-tile
+   * block, and it is behind you.
+   *
+   * The first draft made stopping the answer -- wait for it to land, then
+   * climb it. That is 30 frames of standing plus 23 of climbing on the good
+   * line, and this door had already been thrown out once for making the player
+   * stand still. A trap that costs a correct player nothing and a hesitant one
+   * everything is the right shape here; it is also the same rule the rest of
+   * the door runs on, so DROP stopped being the stage that argued with the
+   * other four. */
+  DROP: {
     width: SECTION_W,
     build() {},
     arm(w, s) {
-      onColumn(w, s.c0 + 4, 2, (wl) => {
-        wl.wall(s.c0 + 1, STAND - 2, 1, 3);
-        wl.wall(s.c0 + 8, STAND - 1, 1, 2);
+      onColumn(w, s.c0 + 4, 2, (wl) => { dropper(wl, s.c0 + 6, 2, 9); });
+    }
+  },
+
+  /* A wall ahead and the floor going behind, so the jump has to be lined up
+   * from ground that is being deleted underneath you, left to right.
+   *
+   * The wall stands mid-section, and that position is the entire stage rather
+   * than a detail. It was at the far end first, and every variant carrying
+   * this section died on it: a two-tile wall has to be taken with horizontal
+   * speed still on the clock, because the collision zeroes vx the moment you
+   * touch it and a jump from a standstill goes straight up and straight back
+   * down the same face. At the end of a corridor with a collapsing floor there
+   * is no room to back off and try again, so arriving at it running was fatal
+   * and arriving at it slowly was fatal. Mid-section, the wall is met at speed
+   * by anyone still moving, and there is runway on the far side.
+   *
+   * The collapse rate is set off a measurement rather than a feel. Running a
+   * player into a wall and timing the recovery:
+   *
+   *   wall    jump from 2-4 tiles out    run into it, then jump
+   *   1 tall           48f (free)                  18f
+   *   2 tall           48f (free)                  23f
+   *   3 tall           impossible                  impossible
+   *
+   * Jumping early costs nothing at all -- 48 frames is simply the time to
+   * cover the ground -- and running into a two-tile wall costs 23 frames to
+   * climb out of. So the only thing this stage can fairly charge for is
+   * arriving badly, and the floor has to be slower than 23 frames per tile
+   * behind the player or it charges for arriving at all. At twelve frames a
+   * tile the margin was five frames and every variant carrying this section
+   * died on the wall; at eighteen it is about thirty, which is one fumbled
+   * approach and not two.
+   *
+   * That is the same rule SHOVE states the other way round -- it is not a race
+   * that can be lost by being slow, only by stopping -- which is what makes
+   * the two read as one door rather than two ideas. */
+  CRUMBLERUN: {
+    width: SECTION_W,
+    build() {},
+    arm(w, s) {
+      onColumn(w, s.c0 + 1, 2, (wl) => {
+        wl.wall(s.c0 + 5, STAND - 1, 1, 2);
+        wl.msg('do not stop.');
+        collapse(wl, s.c0 + 1, s.c0 + 7, 18);
       });
     }
   },
 
-  /* The honest one: a two-tile wall, drawn from the start, that simply has to
-   * be climbed. */
-  PLAINWALL: {
-    width: SECTION_W,
-    build(w, s) { w.fill(s.c0 + 5, STAND - 1, 1, 2, '#'); }
-  },
-
-  /* A roof rather than a wall, and the inversion the door closes on. A gap in
-   * the floor that obviously wants a jump, and a ceiling that slams in above
-   * it at the height a full jump reaches -- so the jump has to happen and has
-   * to be small. Unlike the block in door 2 you can see this one before you
-   * commit, which is deliberate: it is the same lesson with the death removed,
-   * because a door that ends on an unreactable trap ends on a coin toss.
+  /* The inversion, and the door's closer: the wall arrives above you rather
+   * than in front. A gap in the floor that obviously wants a jump, and a
+   * ceiling that slams in over it at the height a full jump reaches -- so the
+   * jump has to happen and has to be small. Take the big one and you stop dead
+   * in the air over the one thing in the section that is not floor.
+   *
+   * You can see this one before you commit, unlike everything else here, which
+   * is deliberate: a door that ends on an unreactable trap ends on a coin toss.
    *
    * The hole is one tile. At two, the only arcs that cross it are the ones the
    * roof stops, and the stage stops being tight and becomes impossible. */
@@ -959,11 +1096,12 @@ const LEVELS = [
    * the right answer is sometimes to stop, in a game that has spent two
    * levels proving that stopping is how you die.
    *
-   * RISE opens every variant, because it is the only stage that introduces a
-   * wall without also demanding something of the player, and PEEKABOO is
-   * unreadable without it. LOWROOF always closes: it is the door's inversion
-   * -- the wall arrives above you rather than in front -- and it lands as a
-   * joke only after three stages of walls arriving in front. */
+   * RISE opens every variant, because it is the only stage here that does not
+   * kill you and the other four are unreadable without it: a player has to
+   * have jumped one wall in peace before being shoved into a hole by the next.
+   * LOWROOF always closes -- it is the door's inversion, the wall arriving
+   * above you rather than in front, and it only lands as a joke after three
+   * stages of walls arriving in front. The three in between shuffle. */
   {
     name: 'WALLS',
     cols: BIG_COLS, rows: BIG_ROWS,
@@ -971,10 +1109,10 @@ const LEVELS = [
     variants: 4,
     init(w) {
       route(w, WALL_SECTIONS, [
-        ['RISE', 'PLAINWALL', 'PEEKABOO', 'BEHIND', 'LOWROOF'],
-        ['RISE', 'PEEKABOO', 'PLAINWALL', 'BEHIND', 'LOWROOF'],
-        ['RISE', 'BEHIND', 'PLAINWALL', 'PEEKABOO', 'LOWROOF'],
-        ['RISE', 'PLAINWALL', 'BEHIND', 'PEEKABOO', 'LOWROOF']
+        ['RISE', 'SHOVE', 'DROP', 'CRUMBLERUN', 'LOWROOF'],
+        ['RISE', 'DROP', 'SHOVE', 'CRUMBLERUN', 'LOWROOF'],
+        ['RISE', 'CRUMBLERUN', 'DROP', 'SHOVE', 'LOWROOF'],
+        ['RISE', 'SHOVE', 'CRUMBLERUN', 'DROP', 'LOWROOF']
       ]);
       w.msg('mind the walls', 150);
     }
